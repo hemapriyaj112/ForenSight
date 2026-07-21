@@ -457,6 +457,44 @@ class VideoDetector:
 
         overall = float(np.mean([fr.fake_prob for fr in frame_results])) if frame_results else 0.0
 
+        # --- Video-level corroboration gate (aggregate) ---
+        # ImageDetector.detect() already applies a PER-FRAME version of this
+        # gate (texture alone can't push a single frame's score into FAKE
+        # without that frame's own classifier reading corroborating it).
+        # That's not sufficient on its own: if even a handful of frames
+        # individually have a corroborating classifier reading while most
+        # don't, those frames escape their own per-frame cap and pull the
+        # AVERAGED video score back above the ceiling — even though the
+        # video-wide average classifier reading (the number the UI actually
+        # displays, e.g. "Classifier 40.1%") never corroborated at all.
+        # Confirmed directly: a real video averaged texture=82.8%,
+        # classifier=40.1%, and still fused to ~63% FAKE despite the
+        # classifier clearly disagreeing on average, because a minority of
+        # frames' individually-high classifier readings weren't capped.
+        # Re-apply the same rule here using the same averaged numbers shown
+        # in the UI, so the final video-level verdict can't drift out of
+        # sync with what the person is actually shown.
+        if frame_results:
+            texture_vals = [fr.sub_scores.get("texture") for fr in frame_results
+                             if fr.sub_scores.get("texture") is not None]
+            classifier_vals = [fr.sub_scores.get("classifier") for fr in frame_results
+                                if fr.sub_scores.get("classifier") is not None]
+            texture_is_sole_heuristic = all(
+                set(fr.sub_scores.keys()) <= {"texture", "classifier"} for fr in frame_results
+            )
+            if texture_is_sole_heuristic and texture_vals:
+                avg_classifier = float(np.mean(classifier_vals)) if classifier_vals else None
+                from utils.config import CFG as _CFG
+                _fake_threshold = float(
+                    getattr(getattr(_CFG, "fusion", None), "fake_threshold", 0.60)
+                )
+                _uncorroborated_ceiling = _fake_threshold - 0.01
+                classifier_corroborates = (
+                    avg_classifier is not None and avg_classifier >= _fake_threshold
+                )
+                if not classifier_corroborates and overall > _uncorroborated_ceiling:
+                    overall = _uncorroborated_ceiling
+
         # --- container-level provenance (once per video, not per frame) ---
         provenance: dict = {}
         if video_bytes is not None:
