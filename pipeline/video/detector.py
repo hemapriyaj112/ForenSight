@@ -806,27 +806,43 @@ class ImageDetector:
         # shown wide, inconsistent swings on real footage (see VideoDetector's
         # class docstring) — trusting it enough to single-handedly cross into
         # FAKE produced a false positive on a real video (0.83 fused, purely
-        # from texture reading high on smooth/bright frames). At the same
-        # time, texture pinned at its ceiling on a genuinely un-provenanced
-        # AI clip is a real, useful signal that shouldn't be thrown away.
-        # Compromise: texture can push the score up to (but not past) the
-        # edge of the UNCERTAIN band on its own — an honest "this looks
-        # suspicious but I can't confirm it" — and only escalates into FAKE
-        # once the trained classifier actively corroborates it. When the
-        # classifier IS active, it already carries real fusion weight
-        # (_CLASSIFIER_WEIGHT) above, so no separate cap is needed there.
+        # from texture reading high on smooth/bright frames). Texture pinned
+        # at its ceiling on a genuinely un-provenanced AI clip is a real,
+        # useful signal that shouldn't be thrown away, though — so texture
+        # can push the score up to (but not past) the edge of the UNCERTAIN
+        # band on its own, an honest "this looks suspicious but I can't
+        # confirm it", and only escalates into FAKE once the trained
+        # classifier itself actively corroborates (reads at/above
+        # fake_threshold on its own).
+        #
+        # IMPORTANT (fixed after real-world testing): "classifier active"
+        # is NOT the same as "classifier corroborates". The first version
+        # of this gate only capped the score when the classifier was
+        # unavailable, and assumed that whenever it *was* active its 45%
+        # fusion weight would naturally keep texture in check. It doesn't:
+        # a real video scored texture=0.828, classifier=0.401 (the
+        # classifier correctly leaning REAL, well below fake_threshold)
+        # and still fused to 0.636 (0.55*0.828 + 0.45*0.401) — FAKE — purely
+        # because texture's 55% share overpowered a disagreeing classifier.
+        # The gate must key off whether the classifier's OWN reading
+        # corroborates fake, not merely whether it ran.
         texture_is_sole_heuristic = (
             not include_spectral and not include_noise
             and not include_ela and not include_metadata
         )
-        if texture_is_sole_heuristic and not classifier_active:
+        if texture_is_sole_heuristic:
             from utils.config import CFG as _CFG
             _fake_threshold = float(
                 getattr(getattr(_CFG, "fusion", None), "fake_threshold", 0.60)
             )
-            _uncorroborated_ceiling = _fake_threshold - 0.01
-            if fused_score > _uncorroborated_ceiling:
-                fused_score = _uncorroborated_ceiling
+            classifier_corroborates = (
+                classifier_active and classifier_out is not None
+                and classifier_out["score"] >= _fake_threshold
+            )
+            if not classifier_corroborates:
+                _uncorroborated_ceiling = _fake_threshold - 0.01
+                if fused_score > _uncorroborated_ceiling:
+                    fused_score = _uncorroborated_ceiling
 
         # A confirmed generator tag (Software/EXIF field, PNG generation
         # metadata, or a C2PA manifest explicitly declaring an AI digital-

@@ -18,7 +18,7 @@ from __future__ import annotations
 import sys
 import tempfile
 from pathlib import Path
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import numpy as np
 import pytest
@@ -271,3 +271,58 @@ class TestClassifierWiring:
         result = detector.detect([_make_frame(seed=0)])
         assert result.metadata["classifier_backend"] == "transformers"
         assert result.metadata["classifier_error"] == "network unreachable"
+
+
+class TestTextureCorroborationGate:
+    """
+    Regression tests for a real production bug (session 5, reported by the
+    user against a live video, not caught by synthetic testing alone):
+    texture is the sole per-frame heuristic for video, and was gated so it
+    couldn't alone push a frame into FAKE without the classifier
+    corroborating — but the FIRST version of that gate only checked
+    whether the classifier was *active*, not whether it *agreed*. A real
+    video scored texture=0.828 / classifier=0.401 (classifier correctly
+    leaning REAL) and still fused to 0.636 (FAKE) because texture's 55%
+    weight overpowered a disagreeing classifier. The gate must key off the
+    classifier's own reading vs fake_threshold, not merely whether it ran.
+    """
+
+    @staticmethod
+    def _detect_with_fixed_texture(texture_score: float, classifier_score: float | None):
+        frame = _make_frame(seed=1)
+        clf = None
+        if classifier_score is not None:
+            clf = MagicMock()
+            clf.available = True
+            clf.backend = "transformers"
+            clf.predict.return_value = {
+                "score": classifier_score, "available": True,
+                "findings": ["mock"], "backend": "transformers",
+            }
+        detector = ImageDetector(ai_classifier=clf)
+        with patch.object(
+            detector._gradcam, "score_and_overlay",
+            return_value=(texture_score, np.zeros((64, 64, 3), dtype=np.uint8)),
+        ):
+            return detector.detect(
+                frame, image_id="f", include_metadata=False, include_noise=False,
+                include_ela=False, include_spectral=False,
+            )
+
+    def test_high_texture_disagreeing_classifier_does_not_reach_fake(self):
+        # The exact real-world numbers reported: texture 0.828, classifier
+        # 0.401 (well below fake_threshold=0.60, i.e. genuinely disagreeing,
+        # not just "not yet confirming"). Must land in UNCERTAIN, not FAKE.
+        result = self._detect_with_fixed_texture(0.828, 0.401)
+        assert result.fused_score < 0.60
+        assert result.fused_score < 0.828  # confirms the gate actually engaged
+
+    def test_high_texture_corroborating_classifier_reaches_fake(self):
+        # Classifier itself reads at/above fake_threshold -> corroborates,
+        # gate should NOT suppress escalation into FAKE.
+        result = self._detect_with_fixed_texture(0.95, 0.74)
+        assert result.fused_score >= 0.60
+
+    def test_high_texture_no_classifier_caps_below_fake(self):
+        result = self._detect_with_fixed_texture(1.0, None)
+        assert result.fused_score < 0.60
