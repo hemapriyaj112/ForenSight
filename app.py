@@ -161,6 +161,41 @@ def render_gradcam_grid(video_result) -> None:
                 )
 
 
+def _video_visual_finding(video_result) -> str:
+    """Build the 'Visual analysis scored X%' explanation sentence from
+    whichever per-frame signals actually ran, instead of a hardcoded list.
+
+    Previously this was a fixed string ("texture + frequency-spectrum
+    artefacts") that went stale the moment spectral was excluded from video
+    fusion (session 5) — it kept describing a signal that was no longer
+    part of the score at all. Deriving the wording from fr.sub_scores keys
+    means it can't drift out of sync with VideoDetector's actual signal set
+    again, whichever heuristics get added/removed from video fusion next.
+    """
+    frames = video_result.frame_results
+    label_by_key = {
+        "texture":  "texture",
+        "spectral": "frequency-spectrum artefacts",
+        "ela":      "error-level analysis",
+        "noise":    "noise-floor",
+    }
+    present_keys = []
+    for key in label_by_key:
+        if any(key in fr.sub_scores for fr in frames):
+            present_keys.append(key)
+
+    if present_keys:
+        heuristics_desc = " + ".join(label_by_key[k] for k in present_keys)
+        desc = f"Visual analysis ({heuristics_desc} across frames)"
+    else:
+        desc = "Visual analysis"
+
+    if any(fr.classifier_active for fr in frames):
+        desc += " plus a trained AI-image classifier"
+
+    return f"{desc} scored {video_result.fake_prob:.0%} likelihood of manipulation."
+
+
 def render_video_score_chart(video_result) -> None:
     """Bar chart of per-signal scores, averaged across all analysed frames —
     the video analog of render_image_score_chart. Only signals that were
@@ -656,10 +691,7 @@ def _video_tab() -> None:
     signals = {
         "video": {
             "score": result.video_result.fake_prob, "weight": eff_video_weight,
-            "findings": [
-                "Visual analysis (texture + frequency-spectrum artefacts across frames) "
-                f"scored {result.video_result.fake_prob:.0%} likelihood of manipulation."
-            ],
+            "findings": [_video_visual_finding(result.video_result)],
         },
     }
     if audio_available:
