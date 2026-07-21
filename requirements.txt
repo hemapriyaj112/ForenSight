@@ -1,0 +1,41 @@
+# ── Core ──────────────────────────────────────────────────────────────────────
+numpy>=1.24.0
+opencv-python>=4.8.0
+ffmpeg-python>=0.2.0
+Pillow>=10.0.0
+tqdm>=4.66.0
+python-dotenv>=1.0.0
+
+# ── Video pipeline ─────────────────────────────────────────────────────────────
+facenet-pytorch>=2.5.3          # MTCNN face detection & alignment
+torch>=2.1.0
+torchvision>=0.16.0
+timm>=0.9.12                    # EfficientNetV2 backbone
+grad-cam>=1.4.8                 # GradCAM overlays
+
+# ── Image forensics: optional trained AI-classifier signal ────────────────────
+transformers>=4.38.0            # Hugging Face local-weights backend
+onnxruntime>=1.16.0              # ONNX backend (lighter, no torch needed)
+safetensors>=0.4.0
+
+# ── Audio pipeline ─────────────────────────────────────────────────────────────
+librosa>=0.10.1                 # STFT / Mel-spectrogram
+soundfile>=0.12.1
+scipy>=1.11.0
+
+# ── Fusion & calibration ───────────────────────────────────────────────────────
+scikit-learn>=1.3.0             # Platt scaling / isotonic regression
+
+# ── Database ──────────────────────────────────────────────────────────────────
+# SQLite is stdlib — no extra package needed
+
+# ── Dashboard ─────────────────────────────────────────────────────────────────
+streamlit>=1.28.0
+plotly>=5.17.0
+altair>=5.1.0
+
+# ── Dev / testing ─────────────────────────────────────────────────────────────
+pytest>=7.4.0
+pytest-cov>=4.1.0
+black>=23.9.0
+ruff>=0.1.0

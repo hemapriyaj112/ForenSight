@@ -1,0 +1,52 @@
+video:
+  frame_rate: 1          # frames per second to sample
+  face_confidence: 0.90
+  weights: "models/efficientnet_v2s.pt"
+
+audio:
+  sample_rate: 16000
+  n_mels: 80
+  hop_length: 160
+  weights: "models/rawnet2.pt"
+
+# Real trained AI-vs-real image classifier (optional). Leave model_path
+# blank/null to keep using the 5 statistical heuristics only. Point
+# model_path at either a single .onnx file, or a local folder with a
+# Hugging Face transformers model (config.json + weights +
+# preprocessor_config.json). See pipeline/forensics/ai_classifier.py for
+# full format details.
+#
+# Currently ENABLED: models/ai_classifier is prithivMLmods/deepfake-
+# detector-model-v1 (SigLIP-based). Tested against a known Gemini-edited
+# photo: correctly scored 95% AI-probability (a prior candidate model,
+# dima806/deepfake_vs_real_image_detection, confidently scored 0% on the
+# same photo and was rejected — see docs/AI_CLASSIFIER_SETUP.md for that
+# comparison). With the photo's metadata stripped, this model still pushed
+# the fused score to 56% (UNCERTAIN) rather than confidently REAL.
+#
+# KNOWN LIMITATION: false-positive risk on document/text-page photos (book
+# pages, receipts, notes) — real testing found both this classifier and
+# the noise-floor heuristic misread flat printed paper as AI-suspicious.
+# Mitigated by pipeline/forensics/document_detector.py, which detects that
+# case and skips the classifier signal for it — see that module's
+# docstring for how it works and its own limitations (small calibration
+# set, may not catch colorful/illustrated documents).
+image_ai_classifier:
+  enabled: true
+  model_path: "prithivMLmods/deepfake-detector-model-v1"
+  backend: "transformers"
+  input_size: 224
+  ai_class_index: 0      # for ONNX 2-class outputs: which column is "AI/Fake"
+
+fusion:
+  video_weight: 0.6
+  audio_weight: 0.4
+  real_threshold: 0.40   # fused score below this → REAL
+  fake_threshold: 0.60   # fused score above this → FAKE
+  # between thresholds → UNCERTAIN
+
+database:
+  path: "forensight.db"
+
+logging:
+  level: "INFO"

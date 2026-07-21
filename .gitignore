@@ -1,0 +1,12 @@
+# Ignore python cache
+__pycache__/
+*.pyc
+*.safetensors
+# Ignore massive machine learning model weights
+models/
+
+# Ignore local datasets (if they are too big)
+data/
+
+# Ignore local logs
+logs/
