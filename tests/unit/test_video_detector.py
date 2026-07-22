@@ -326,3 +326,74 @@ class TestTextureCorroborationGate:
     def test_high_texture_no_classifier_caps_below_fake(self):
         result = self._detect_with_fixed_texture(1.0, None)
         assert result.fused_score < 0.60
+
+
+class TestFaceCropGating:
+    """
+    Session 5: the wired-in classifier was found to read BACKWARDS on real
+    video frames (a confirmed-AI video averaged 0.27 "mostly real"; a
+    confirmed-real video averaged 0.78 "mostly AI"). Leading hypothesis:
+    it's very likely trained on cropped face images, and was being fed
+    whole raw frames with background — an input-domain mismatch. Frames
+    are now cropped to the primary face before hitting the classifier;
+    frames with no detectable face skip the classifier entirely rather
+    than feed it an out-of-domain whole frame.
+    """
+
+    @staticmethod
+    def _make_fake_cropper(face_found: bool):
+        cropper = MagicMock()
+        if face_found:
+            cropper.crop.return_value = {
+                "face_found": True, "crop": np.zeros((32, 32, 3), dtype=np.uint8),
+                "box": (0, 0, 32, 32), "confidence": 0.99, "error": None,
+            }
+        else:
+            cropper.crop.return_value = {
+                "face_found": False, "crop": None, "box": None,
+                "confidence": None, "error": None,
+            }
+        return cropper
+
+    @staticmethod
+    def _make_fake_classifier():
+        clf = MagicMock()
+        clf.available = True
+        clf.backend = "transformers"
+        clf.predict.return_value = {
+            "score": 0.8, "available": True, "findings": ["mock"], "backend": "transformers",
+        }
+        return clf
+
+    def test_no_face_skips_classifier_entirely(self):
+        clf = self._make_fake_classifier()
+        cropper = self._make_fake_cropper(face_found=False)
+        detector = VideoDetector(ai_classifier=clf, face_cropper=cropper)
+        result = detector.detect([_make_frame(seed=0)])
+        fr = result.frame_results[0]
+        assert fr.face_detected is False
+        assert fr.classifier_active is False
+        clf.predict.assert_not_called()
+
+    def test_face_found_calls_classifier_with_the_crop_not_the_full_frame(self):
+        clf = self._make_fake_classifier()
+        cropper = self._make_fake_cropper(face_found=True)
+        detector = VideoDetector(ai_classifier=clf, face_cropper=cropper)
+        result = detector.detect([_make_frame(seed=0, size=(64, 64))])
+        fr = result.frame_results[0]
+        assert fr.face_detected is True
+        assert fr.classifier_active is True
+        clf.predict.assert_called_once()
+        called_with = clf.predict.call_args[0][0]
+        assert called_with.shape == (32, 32, 3)  # the crop, not the 64x64 full frame
+
+    def test_no_face_cropper_wired_falls_back_to_full_frame(self):
+        # Standalone image detection (face_crop_before_classifier=False by
+        # default) should be entirely unaffected by this feature.
+        clf = self._make_fake_classifier()
+        detector = ImageDetector(ai_classifier=clf)
+        frame = _make_frame(seed=0, size=(64, 64))
+        detector.detect(frame, image_id="f")
+        clf.predict.assert_called_once()
+        called_with = clf.predict.call_args[0][0]
+        assert called_with.shape == (64, 64, 3)  # full frame, cropping never engaged

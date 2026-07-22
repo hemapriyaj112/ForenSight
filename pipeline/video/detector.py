@@ -365,11 +365,21 @@ class VideoDetector:
       run(frames_dir, cfg)  — Path to directory of frame images (used by main.py)
     """
 
-    def __init__(self, cfg=None, model=None, ai_classifier=None):
+    def __init__(self, cfg=None, model=None, ai_classifier=None, face_cropper=None):
         # cfg is accepted for main.py compatibility but not used in stub mode
         self._cfg = cfg
         self._ai_classifier = ai_classifier  # optional AIClassifier instance, shared with ImageDetector
-        self._image_detector = ImageDetector(model=model, ai_classifier=ai_classifier)
+        # Lazily create a FaceCropper if the caller didn't supply one — mirrors
+        # AIClassifier's own lazy-load-then-stay-inert-on-failure pattern (see
+        # face_crop_before_classifier's docstring on ImageDetector.detect for
+        # why video frames need this before hitting the classifier).
+        if face_cropper is None:
+            from pipeline.forensics.face_crop import FaceCropper
+            face_cropper = FaceCropper()
+        self._face_cropper = face_cropper
+        self._image_detector = ImageDetector(
+            model=model, ai_classifier=ai_classifier, face_cropper=face_cropper,
+        )
 
     # ── Called by main.py ────────────────────────────────────────────────────
 
@@ -438,14 +448,14 @@ class VideoDetector:
             img_result = self._image_detector.detect(
                 frame, image_id=f"frame_{idx:06d}",
                 include_metadata=False, include_noise=False, include_ela=False,
-                include_spectral=False,
+                include_spectral=False, face_crop_before_classifier=True,
             )
 
             frame_results.append(FrameResult(
                 frame_index=idx,
                 timestamp_sec=timestamps[idx] if idx < len(timestamps) else float(idx),
                 fake_prob=img_result.fused_score,
-                face_detected=True,
+                face_detected=img_result.metadata.get("face_detected", True),
                 gradcam_overlay=img_result.gradcam_overlay,
                 sub_scores=img_result.sub_scores,
                 findings=img_result.findings,
@@ -586,10 +596,11 @@ class ImageDetector:
     # to 1.0 on their own) apply unchanged.
     _CLASSIFIER_WEIGHT = 0.45
 
-    def __init__(self, model=None, ai_classifier=None):
+    def __init__(self, model=None, ai_classifier=None, face_cropper=None):
         self._gradcam = _GradCAM(model=model)
         self._freq    = _FrequencyAnalyser()
         self._ai_classifier = ai_classifier  # optional AIClassifier instance
+        self._face_cropper  = face_cropper   # optional FaceCropper instance (session 5)
 
     def detect(
         self,
@@ -601,6 +612,7 @@ class ImageDetector:
         include_noise: bool = True,
         include_ela: bool = True,
         include_spectral: bool = True,
+        face_crop_before_classifier: bool = False,
     ) -> ImageResult:
         """
         include_metadata: set False when the caller already knows per-image
@@ -674,6 +686,31 @@ class ImageDetector:
         tradeoff (texture is also an imperfect signal — see its own
         docstring above) needs to be re-checked against real footage in
         both directions before this becomes a settled default.
+
+        face_crop_before_classifier: set True for video frames (session 5).
+        The wired-in classifier (prithivMLmods/deepfake-detector-model-v1)
+        was validated against real video frames for the first time this
+        session and found to read BACKWARDS on some real-world clips (a
+        confirmed-AI video averaged 0.27 "mostly real"; a confirmed-real
+        video averaged 0.78 "mostly AI"). facenet-pytorch (MTCNN) has been
+        an unused dependency since before the ImageDetector-fusion rebuild
+        — this class is very likely trained on cropped face images (it's
+        tagged deep-fake/detection), not whole raw camera frames with
+        background, so feeding it whole frames is an input-domain mismatch
+        regardless of whether the resize/normalisation is technically
+        correct (it is — the transformers backend already uses the model's
+        own AutoImageProcessor). When True and a FaceCropper is wired in
+        via the face_cropper constructor arg, the classifier only runs on
+        the cropped primary face region; if no face is found, the
+        classifier is skipped for that frame entirely (findings note why)
+        rather than fed a whole-frame image it was never trained on.
+        CAVEAT, tested directly: within one video with a genuine mixed
+        face/no-face frame split, per-frame classifier scores were nearly
+        identical whether or not a face was actually present (~0.245 vs
+        ~0.287, both still backwards) — so face-cropping is the technically
+        correct thing to do regardless, but is NOT confirmed to fix the
+        backwards readings on its own. Needs re-testing on real video with
+        this wired in before treating the classifier as trustworthy again.
         """
         from pipeline.forensics import ela as _ela
         from pipeline.forensics import explain as _explain
@@ -745,12 +782,26 @@ class ImageDetector:
         doc_out = _docdet.looks_like_document(image_rgb)
 
         classifier_out = None
+        face_crop_out = None
         if (
             self._ai_classifier is not None
             and self._ai_classifier.available
             and not doc_out["is_document"]
         ):
-            classifier_out = self._ai_classifier.predict(image_rgb)
+            classifier_input = image_rgb
+            if face_crop_before_classifier and self._face_cropper is not None:
+                face_crop_out = self._face_cropper.crop(image_rgb)
+                if face_crop_out["face_found"]:
+                    classifier_input = face_crop_out["crop"]
+                else:
+                    # No face to crop -- this classifier is very likely
+                    # face-trained (see face_crop_before_classifier
+                    # docstring above), so feeding it a whole non-face
+                    # frame is an out-of-domain input, not a meaningful
+                    # reading. Skip rather than guess.
+                    classifier_input = None
+            if classifier_input is not None:
+                classifier_out = self._ai_classifier.predict(classifier_input)
 
         classifier_active = bool(classifier_out and classifier_out.get("available"))
 
@@ -927,7 +978,16 @@ class ImageDetector:
                 "image_path":      image_path or "",
                 "width":           w,
                 "height":          h,
-                "face_detected":   True,
+                "face_detected":   (
+                    face_crop_out["face_found"] if face_crop_out is not None else True
+                ),
+                "face_crop_confidence": (
+                    face_crop_out.get("confidence") if face_crop_out is not None else None
+                ),
+                "classifier_skipped_no_face": bool(
+                    face_crop_before_classifier and face_crop_out is not None
+                    and not face_crop_out["face_found"]
+                ),
                 "gradcam_weight":  active_weights["texture"],
                 "freq_weight":     active_weights.get("spectral"),
                 "ela_weight":      active_weights.get("ela"),
