@@ -37,6 +37,14 @@ class FrameResult:
     is_document: bool = False                              # frame looked like a document/text page (classifier skipped)
     classifier_active: bool = False                        # whether the trained AI classifier ran on this frame
 
+    # Session 5→6: the fused score BEFORE the per-frame texture-only ceiling
+    # is applied (equal to fake_prob when the ceiling doesn't fire). Lets
+    # VideoDetector's aggregate gate recompute a video-wide mean that trusts
+    # texture uniformly once the classifier corroborates on the frames it
+    # could see, instead of being diluted by frames capped for lacking a
+    # detected face/classifier reading.
+    pre_ceiling_score: Optional[float] = None
+
 
 @dataclass
 class AudioSegmentResult:

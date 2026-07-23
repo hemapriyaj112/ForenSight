@@ -461,6 +461,7 @@ class VideoDetector:
                 findings=img_result.findings,
                 is_document=img_result.metadata.get("is_document", False),
                 classifier_active=img_result.metadata.get("classifier_active", False),
+                pre_ceiling_score=img_result.metadata.get("pre_ceiling_score"),
             ))
             if img_result.metadata.get("is_document", False):
                 documents_skipped += 1
@@ -502,8 +503,61 @@ class VideoDetector:
                 classifier_corroborates = (
                     avg_classifier is not None and avg_classifier >= _fake_threshold
                 )
-                if not classifier_corroborates and overall > _uncorroborated_ceiling:
+                if classifier_corroborates:
+                    # The classifier actively agrees on the frames it could
+                    # evaluate — trust texture uniformly across the WHOLE
+                    # video rather than leaving `overall` as a mean of
+                    # already-capped-per-frame values (which silently
+                    # dilutes the score whenever most frames lacked a
+                    # detected face/classifier reading and got capped at
+                    # the texture-only ceiling individually). Recompute
+                    # from the pre-ceiling scores instead. Falls back to
+                    # the already-computed (possibly capped) fake_prob for
+                    # any frame missing pre_ceiling_score for some reason.
+                    pre_ceiling_vals = [
+                        fr.pre_ceiling_score if fr.pre_ceiling_score is not None
+                        else fr.fake_prob
+                        for fr in frame_results
+                    ]
+                    overall = float(np.mean(pre_ceiling_vals))
+                elif overall > _uncorroborated_ceiling:
                     overall = _uncorroborated_ceiling
+
+        # --- Two-segment reporting (session 6, user-requested) ---
+        # Split frames into a "face segment" (a face was detected/cropped)
+        # and a "non-face segment" (it wasn't), and report each with its
+        # own aggregate score/verdict — additional DISPLAY-only detail
+        # alongside the single `overall` fused score above, which remains
+        # the one number Fuser/main.py uses for the actual verdict.
+        face_frames = [fr for fr in frame_results if fr.face_detected]
+        non_face_frames = [fr for fr in frame_results if not fr.face_detected]
+
+        def _segment_summary(frames_subset: list[FrameResult]) -> Optional[dict]:
+            if not frames_subset:
+                return None
+            texture_subset = [
+                fr.sub_scores.get("texture") for fr in frames_subset
+                if fr.sub_scores.get("texture") is not None
+            ]
+            classifier_subset = [
+                fr.sub_scores.get("classifier") for fr in frames_subset
+                if fr.sub_scores.get("classifier") is not None
+            ]
+            # Segment score: mean of each frame's own fused fake_prob (which
+            # already carries the per-frame classifier weighting/ceiling
+            # logic) restricted to this segment's frames — consistent with
+            # how `overall` itself is computed, just over a subset.
+            segment_score = float(np.mean([fr.fake_prob for fr in frames_subset]))
+            return {
+                "frame_count": len(frames_subset),
+                "avg_texture": float(np.mean(texture_subset)) if texture_subset else None,
+                "avg_classifier": float(np.mean(classifier_subset)) if classifier_subset else None,
+                "score": segment_score,
+                "verdict": _assign_verdict(segment_score),
+            }
+
+        face_segment = _segment_summary(face_frames)
+        non_face_segment = _segment_summary(non_face_frames)
 
         # --- container-level provenance (once per video, not per frame) ---
         provenance: dict = {}
@@ -544,6 +598,8 @@ class VideoDetector:
             ),
             "frames_analysed": len(frame_results),
             "documents_skipped": documents_skipped,
+            "face_segment": face_segment,
+            "non_face_segment": non_face_segment,
         }
 
         return ModalResult(
@@ -890,6 +946,14 @@ class ImageDetector:
             sum(s["score"] * s["weight"] for s in signals.values()), 0.0, 1.0
         ))
 
+        # Captured BEFORE the texture-only ceiling below is applied, so
+        # VideoDetector's aggregate gate can later recompute a video-wide
+        # mean that trusts texture uniformly across every frame once the
+        # classifier has corroborated it on the frames it could see — see
+        # "pre_ceiling_score" in VideoDetector.detect()'s aggregate gate.
+        # Equal to fused_score whenever the cap doesn't end up firing below.
+        pre_ceiling_score = fused_score
+
         # Session 5: with spectral/noise/ela/metadata all excluded for video,
         # texture is the ONLY per-frame heuristic left. Texture alone has
         # shown wide, inconsistent swings on real footage (see VideoDetector's
@@ -1007,6 +1071,7 @@ class ImageDetector:
                 ),
                 "is_document": doc_out["is_document"],
                 "document_colorfulness": doc_out["colorfulness"],
+                "pre_ceiling_score": pre_ceiling_score,
             },
         )
 

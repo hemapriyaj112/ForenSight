@@ -397,3 +397,155 @@ class TestFaceCropGating:
         clf.predict.assert_called_once()
         called_with = clf.predict.call_args[0][0]
         assert called_with.shape == (64, 64, 3)  # full frame, cropping never engaged
+
+
+class TestAggregateCorroborationGate:
+    """
+    Session 5→6: face-cropping introduced a real regression on a genuinely
+    AI video with no provenance tag (ai_noaud2.mp4): only a minority of
+    frames had a detectable face (and thus a classifier reading), while the
+    rest were individually capped at the texture-only ceiling for lacking
+    one. Averaging fake_prob straight across all frames diluted a
+    consistently-high texture signal (~0.969 avg) down toward the fake
+    threshold (87.3% -> 60.84%), purely because most frames never got a
+    chance to have their cap lifted.
+
+    Fix: capture each frame's PRE-ceiling fused score, and when the
+    classifier corroborates on average across the frames it *could*
+    evaluate, recompute the video-wide score from the pre-ceiling values
+    instead of the diluted post-cap mean.
+    """
+
+    @staticmethod
+    def _detector_with_fixed_texture_and_face_pattern(texture_score: float, classifier_score: float,
+                                                        face_pattern: list[bool]):
+        cropper = MagicMock()
+        crop_results = [
+            {"face_found": found, "crop": np.zeros((32, 32, 3), dtype=np.uint8) if found else None,
+             "box": (0, 0, 32, 32) if found else None,
+             "confidence": 0.99 if found else None, "error": None}
+            for found in face_pattern
+        ]
+        cropper.crop.side_effect = crop_results
+
+        clf = MagicMock()
+        clf.available = True
+        clf.backend = "transformers"
+        clf.predict.return_value = {
+            "score": classifier_score, "available": True,
+            "findings": ["mock"], "backend": "transformers",
+        }
+
+        detector = VideoDetector(ai_classifier=clf, face_cropper=cropper)
+        patcher = patch.object(
+            detector._image_detector._gradcam, "score_and_overlay",
+            return_value=(texture_score, np.zeros((64, 64, 3), dtype=np.uint8)),
+        )
+        return detector, patcher
+
+    def test_minority_corroborating_frames_recover_diluted_score(self):
+        # 10 frames, only 2 have a detected face (and thus a classifier
+        # reading that corroborates fake); texture is consistently high
+        # across every frame regardless of face presence.
+        face_pattern = [True, True] + [False] * 8
+        detector, patcher = self._detector_with_fixed_texture_and_face_pattern(
+            texture_score=0.969, classifier_score=0.85, face_pattern=face_pattern,
+        )
+        frames = [_make_frame(seed=i) for i in range(10)]
+        with patcher:
+            result = detector.detect(frames)
+
+        # Every frame should carry a pre_ceiling_score close to the raw
+        # texture-only blend, even the ones whose fake_prob got capped.
+        for fr in result.frame_results:
+            assert fr.pre_ceiling_score is not None
+
+        # Diluted mean(fake_prob) would sit well below the recovered score.
+        diluted_mean = float(np.mean([fr.fake_prob for fr in result.frame_results]))
+        assert result.fake_prob > diluted_mean
+        # Recovered score should track the uncapped texture signal, not the
+        # capped ~0.59 ceiling that dragged the old mean down.
+        assert result.fake_prob >= 0.60
+
+    def test_non_corroborating_classifier_keeps_conservative_cap(self):
+        # Same face pattern, but the classifier actively disagrees on the
+        # frames it could see -- the conservative (capped) behavior must
+        # still apply; no recovery should happen.
+        face_pattern = [True, True] + [False] * 8
+        detector, patcher = self._detector_with_fixed_texture_and_face_pattern(
+            texture_score=0.969, classifier_score=0.30, face_pattern=face_pattern,
+        )
+        frames = [_make_frame(seed=i) for i in range(10)]
+        with patcher:
+            result = detector.detect(frames)
+        assert result.fake_prob < 0.60
+
+
+class TestTwoSegmentReporting:
+    """
+    Session 6 (user-requested): report the video's face-containing frames
+    and non-face frames as two separate summaries, in addition to the
+    single overall fused score.
+    """
+
+    def test_face_and_non_face_segments_populated_separately(self):
+        cropper = MagicMock()
+        cropper.crop.side_effect = [
+            {"face_found": True, "crop": np.zeros((32, 32, 3), dtype=np.uint8),
+             "box": (0, 0, 32, 32), "confidence": 0.99, "error": None},
+            {"face_found": False, "crop": None, "box": None, "confidence": None, "error": None},
+            {"face_found": False, "crop": None, "box": None, "confidence": None, "error": None},
+        ]
+        clf = MagicMock()
+        clf.available = True
+        clf.backend = "transformers"
+        clf.predict.return_value = {
+            "score": 0.8, "available": True, "findings": ["mock"], "backend": "transformers",
+        }
+        detector = VideoDetector(ai_classifier=clf, face_cropper=cropper)
+        frames = [_make_frame(seed=i) for i in range(3)]
+        result = detector.detect(frames)
+
+        face_seg = result.metadata["face_segment"]
+        non_face_seg = result.metadata["non_face_segment"]
+
+        assert face_seg["frame_count"] == 1
+        assert face_seg["avg_classifier"] is not None
+        assert non_face_seg["frame_count"] == 2
+        assert non_face_seg["avg_classifier"] is None  # classifier never ran on these frames
+        assert face_seg["verdict"] in {"REAL", "UNCERTAIN", "FAKE"}
+        assert non_face_seg["verdict"] in {"REAL", "UNCERTAIN", "FAKE"}
+
+    @staticmethod
+    def _make_fake_classifier():
+        clf = MagicMock()
+        clf.available = True
+        clf.backend = "transformers"
+        clf.predict.return_value = {
+            "score": 0.8, "available": True, "findings": ["mock"], "backend": "transformers",
+        }
+        return clf
+
+    def test_non_face_segment_is_none_when_every_frame_has_a_face(self):
+        cropper = MagicMock()
+        cropper.crop.return_value = {
+            "face_found": True, "crop": np.zeros((32, 32, 3), dtype=np.uint8),
+            "box": (0, 0, 32, 32), "confidence": 0.99, "error": None,
+        }
+        detector = VideoDetector(ai_classifier=self._make_fake_classifier(), face_cropper=cropper)
+        frames = [_make_frame(seed=0)]
+        result = detector.detect(frames)
+        assert result.metadata["face_segment"] is not None
+        assert result.metadata["non_face_segment"] is None
+
+    def test_face_segment_is_none_when_no_frame_has_a_face(self):
+        cropper = MagicMock()
+        cropper.crop.return_value = {
+            "face_found": False, "crop": None, "box": None,
+            "confidence": None, "error": None,
+        }
+        detector = VideoDetector(ai_classifier=self._make_fake_classifier(), face_cropper=cropper)
+        frames = [_make_frame(seed=0)]
+        result = detector.detect(frames)
+        assert result.metadata["face_segment"] is None
+        assert result.metadata["non_face_segment"] is not None

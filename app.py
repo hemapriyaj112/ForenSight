@@ -280,6 +280,54 @@ def render_video_provenance(video_result) -> None:
         )
 
 
+def render_video_segments(video_result) -> None:
+    """Session 6: two-segment reporting. The single fused score above stays
+    the one number used for the overall REAL/FAKE/UNCERTAIN verdict — this
+    just breaks it down into 'the face' vs. 'the rest of the footage',
+    since a video can have a real face composited over a suspicious
+    background (or vice versa), and the single number alone can't say
+    which part is driving the result."""
+    meta = video_result.metadata or {}
+    face_seg = meta.get("face_segment")
+    non_face_seg = meta.get("non_face_segment")
+
+    if not face_seg and not non_face_seg:
+        return
+
+    st.subheader("🧩 Face vs. background breakdown")
+    col_face, col_bg = st.columns(2)
+
+    with col_face:
+        st.markdown("**Face segment**")
+        if face_seg:
+            st.write(
+                f"{face_seg['verdict']} ({face_seg['score']:.0%}) — "
+                f"based on {face_seg['frame_count']} frame(s) where a face was detected."
+            )
+            details = []
+            if face_seg.get("avg_texture") is not None:
+                details.append(f"texture avg {face_seg['avg_texture']:.0%}")
+            if face_seg.get("avg_classifier") is not None:
+                details.append(f"classifier avg {face_seg['avg_classifier']:.0%}")
+            if details:
+                st.caption(" · ".join(details))
+        else:
+            st.caption("No face was detected in any sampled frame.")
+
+    with col_bg:
+        st.markdown("**Rest of the footage**")
+        if non_face_seg:
+            st.write(
+                f"{non_face_seg['verdict']} ({non_face_seg['score']:.0%}) — "
+                f"based on {non_face_seg['frame_count']} frame(s) with no detected face "
+                "(texture-only signal; the trained classifier doesn't apply here)."
+            )
+            if non_face_seg.get("avg_texture") is not None:
+                st.caption(f"texture avg {non_face_seg['avg_texture']:.0%}")
+        else:
+            st.caption("Every sampled frame had a detected face.")
+
+
 def render_video_localization(video_result) -> None:
     """Spatial 'where' (most-suspicious frame) + temporal 'when' (which
     part of the timeline) — the video analog of render_image_localization."""
@@ -715,6 +763,9 @@ def _video_tab() -> None:
 
     st.divider()
     render_video_provenance(result.video_result)
+
+    st.divider()
+    render_video_segments(result.video_result)
 
     with st.expander("🔬 Advanced technical details"):
         st.subheader("Detection Score Breakdown")
