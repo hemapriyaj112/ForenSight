@@ -549,3 +549,28 @@ class TestTwoSegmentReporting:
         result = detector.detect(frames)
         assert result.metadata["face_segment"] is None
         assert result.metadata["non_face_segment"] is not None
+
+    def test_document_frame_never_falsely_counted_as_face_segment(self):
+        # Regression: real_vid_to_test.mp4 (book pages, MTCNN-confirmed
+        # zero faces) was showing up with 17/21 frames in the FACE segment
+        # at REAL 1%. Root cause: document frames skip the classifier (and
+        # therefore face-cropping, which only runs as part of the
+        # classifier step) entirely, leaving face_crop_out as None -- and
+        # the old fallback defaulted face_detected to True in that case,
+        # silently mislabeling every document frame as "a face was found".
+        clf = self._make_fake_classifier()
+        cropper = MagicMock()
+        cropper.crop.return_value = {
+            "face_found": True, "crop": np.zeros((32, 32, 3), dtype=np.uint8),
+            "box": (0, 0, 32, 32), "confidence": 0.99, "error": None,
+        }
+        detector = VideoDetector(ai_classifier=clf, face_cropper=cropper)
+        with patch("pipeline.forensics.document_detector.looks_like_document",
+                   return_value={"is_document": True, "colorfulness": 0.0}):
+            result = detector.detect([_make_frame(seed=0)])
+
+        cropper.crop.assert_not_called()   # face-crop never even attempted
+        clf.predict.assert_not_called()    # classifier never ran on a document page
+        assert result.frame_results[0].face_detected is False
+        assert result.metadata["face_segment"] is None
+        assert result.metadata["non_face_segment"] is not None

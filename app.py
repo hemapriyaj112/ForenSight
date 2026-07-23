@@ -730,6 +730,12 @@ def _video_tab() -> None:
         st.subheader("Fused Score")
         render_gauge(result.fused_score)
 
+    # Short, plain-English one-liner right under the verdict/gauge — filled
+    # in below once the full explanation is computed, so it doesn't need to
+    # duplicate that logic. Anyone should be able to read this and get the
+    # gist without scrolling to the detailed Explanation section.
+    quick_summary_slot = st.empty()
+
     st.divider()
     st.subheader("🧾 Explanation")
     audio_available = result.metadata.get("audio_available", True)
@@ -759,6 +765,14 @@ def _video_tab() -> None:
         st.caption(f"ℹ️ {result.audio_result.error} — verdict is based on video analysis only.")
 
     summary = _explain.summarise(_verdict_str(result.verdict), result.fused_score, signals)
+
+    verdict_str = _verdict_str(result.verdict)
+    _quick_summary_box = {"FAKE": st.error, "REAL": st.success, "UNCERTAIN": st.warning}.get(
+        verdict_str, st.info
+    )
+    with quick_summary_slot.container():
+        _quick_summary_box(summary["headline"])
+
     _render_explanation_panel(summary["headline"], summary["reasons"], summary["confidence_label"])
 
     st.divider()
@@ -825,6 +839,12 @@ def _image_tab() -> None:
     with col_badge:
         st.subheader("Verdict")
         render_image_verdict_badge(result)
+
+        _quick_headline = result.headline or _verdict_str(result.verdict)
+        _quick_summary_box = {"FAKE": st.error, "REAL": st.success, "UNCERTAIN": st.warning}.get(
+            _verdict_str(result.verdict), st.info
+        )
+        _quick_summary_box(_quick_headline)
 
     st.divider()
     st.subheader("🧾 Explanation")

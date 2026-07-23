@@ -455,7 +455,7 @@ class VideoDetector:
                 frame_index=idx,
                 timestamp_sec=timestamps[idx] if idx < len(timestamps) else float(idx),
                 fake_prob=img_result.fused_score,
-                face_detected=img_result.metadata.get("face_detected", True),
+                face_detected=img_result.metadata.get("face_detected", False),
                 gradcam_overlay=img_result.gradcam_overlay,
                 sub_scores=img_result.sub_scores,
                 findings=img_result.findings,
@@ -1043,7 +1043,7 @@ class ImageDetector:
                 "width":           w,
                 "height":          h,
                 "face_detected":   (
-                    face_crop_out["face_found"] if face_crop_out is not None else True
+                    face_crop_out["face_found"] if face_crop_out is not None else False
                 ),
                 "face_crop_confidence": (
                     face_crop_out.get("confidence") if face_crop_out is not None else None
