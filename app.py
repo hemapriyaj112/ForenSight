@@ -33,6 +33,48 @@ st.set_page_config(
     layout="wide",
 )
 
+def _build_detailed_summary(
+    headline: str,
+    reasons: list[str],
+    verdict_str: str,
+    extra_lines: list[str] | None = None,
+) -> str:
+    """Compose a 4-6 sentence, non-technical paragraph explaining WHY the
+    verdict came out the way it did: the headline, up to 3 of the strongest
+    supporting reasons (already plain-English strings from
+    pipeline/forensics/explain.py), any extra context (e.g. a video's face
+    vs. background split), and a closing note appropriate to the verdict.
+    Meant to sit right under the Verdict/Fused Score, so someone with zero
+    technical background can read it and understand the call."""
+    lines = [headline]
+    lines.extend(reasons[:3])
+    if extra_lines:
+        lines.extend(extra_lines)
+    closing = {
+        "FAKE": (
+            "Several of our checks agree on this, which is why we're "
+            "flagging it as likely AI-generated or edited — if this matters "
+            "for a real decision, it's still worth comparing against the "
+            "original source if you have one."
+        ),
+        "REAL": (
+            "None of our checks turned up the kind of tell-tale signs — "
+            "unnatural texture, mismatched metadata, or classifier "
+            "confidence — that AI-generated or edited content usually "
+            "leaves behind, so we're treating this as genuine."
+        ),
+        "UNCERTAIN": (
+            "The evidence is mixed: some checks lean toward real and others "
+            "toward fake, so we can't confidently call this one way or the "
+            "other. Treat the result with caution and check the source if "
+            "it matters."
+        ),
+    }.get(verdict_str, "")
+    if closing:
+        lines.append(closing)
+    return "\n\n".join(lines)
+
+
 def _render_explanation_panel(headline: str, reasons: list[str], confidence_label: str) -> None:
     """Plain-language 'why' panel — the primary thing a non-technical user reads."""
     conf_color = {"High": "#0f5132", "Moderate": "#664d03", "Low": "#495057"}.get(confidence_label, "#495057")
@@ -770,8 +812,32 @@ def _video_tab() -> None:
     _quick_summary_box = {"FAKE": st.error, "REAL": st.success, "UNCERTAIN": st.warning}.get(
         verdict_str, st.info
     )
+    _seg_meta = result.video_result.metadata or {}
+    _face_seg = _seg_meta.get("face_segment")
+    _non_face_seg = _seg_meta.get("non_face_segment")
+    _extra_lines: list[str] = []
+    if _face_seg and _non_face_seg:
+        _extra_lines.append(
+            f"Frames where we could see a face read {_face_seg['verdict'].lower()} "
+            f"({_face_seg['score']:.0%}), while the rest of the footage — without a "
+            f"visible face — read {_non_face_seg['verdict'].lower()} "
+            f"({_non_face_seg['score']:.0%})."
+        )
+    elif _face_seg:
+        _extra_lines.append(
+            f"Every frame we checked had a visible face, and that reading came out "
+            f"{_face_seg['verdict'].lower()} ({_face_seg['score']:.0%})."
+        )
+    elif _non_face_seg:
+        _extra_lines.append(
+            f"No face was detected in any sampled frame, so this call is based "
+            f"purely on visual texture patterns across the footage "
+            f"({_non_face_seg['score']:.0%})."
+        )
     with quick_summary_slot.container():
-        _quick_summary_box(summary["headline"])
+        _quick_summary_box(
+            _build_detailed_summary(summary["headline"], summary["reasons"], verdict_str, _extra_lines)
+        )
 
     _render_explanation_panel(summary["headline"], summary["reasons"], summary["confidence_label"])
 
@@ -844,7 +910,9 @@ def _image_tab() -> None:
         _quick_summary_box = {"FAKE": st.error, "REAL": st.success, "UNCERTAIN": st.warning}.get(
             _verdict_str(result.verdict), st.info
         )
-        _quick_summary_box(_quick_headline)
+        _quick_summary_box(
+            _build_detailed_summary(_quick_headline, result.findings, _verdict_str(result.verdict))
+        )
 
     st.divider()
     st.subheader("🧾 Explanation")
