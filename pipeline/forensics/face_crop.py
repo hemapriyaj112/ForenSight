@@ -48,9 +48,20 @@ class FaceCropper:
     available" the same way they already treat "no classifier available".
     """
 
-    def __init__(self, margin: float = 0.4, min_face_size: int = 20):
+    def __init__(self, margin: float = 0.4, min_face_size: int = 20, min_confidence: float = 0.90):
         self.margin = margin
         self.min_face_size = min_face_size
+        # Session 6 finding: ai_noaud2.mp4 (an AI-generated video of a hand,
+        # no face anywhere) was getting a "face found" on 1/10 frames.
+        # MTCNN.detect() returns every candidate box its cascade proposes,
+        # including low-confidence ones -- it deliberately leaves filtering
+        # to the caller via the returned `probs`, which this class wasn't
+        # doing at all. Skin-tone/blob-like regions (a hand, in this case)
+        # can pass the cascade at low confidence. 0.90 is a conservative cut
+        # that rejects that class of false positive while still passing the
+        # near-1.0 confidence MTCNN reports on genuine frontal/near-frontal
+        # faces in this pipeline's other test videos.
+        self.min_confidence = min_confidence
         self.available = False
         self.load_error: Optional[str] = None
         self._mtcnn = None
@@ -98,6 +109,18 @@ class FaceCropper:
         if boxes is None or len(boxes) == 0:
             return {"face_found": False, "crop": None, "box": None,
                      "confidence": None, "error": None}
+
+        # Drop any candidate below min_confidence before picking the
+        # largest -- MTCNN.detect() intentionally doesn't do this itself.
+        if probs is not None:
+            keep = [i for i, p in enumerate(probs) if p is not None and p >= self.min_confidence]
+        else:
+            keep = list(range(len(boxes)))
+        if not keep:
+            return {"face_found": False, "crop": None, "box": None,
+                     "confidence": None, "error": None}
+        boxes = [boxes[i] for i in keep]
+        probs = [probs[i] for i in keep] if probs is not None else None
 
         # Largest face by box area (most likely the primary subject).
         areas = [(b[2] - b[0]) * (b[3] - b[1]) for b in boxes]
