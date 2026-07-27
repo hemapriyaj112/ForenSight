@@ -80,6 +80,63 @@ class FaceCropper:
             self.load_error = f"{type(exc).__name__}: {exc}"
             self.available = False
 
+    @staticmethod
+    def _has_coherent_face_geometry(points: Optional[np.ndarray], box: np.ndarray) -> bool:
+        """
+        Sanity-checks MTCNN's 5-point landmark output (left eye, right eye,
+        nose, mouth-left, mouth-right, in that fixed order) against what a
+        real face's layout looks like, independent of the cascade's own
+        confidence score. Rejects candidates with no landmarks at all (the
+        regressor failed to converge on anything face-like) or with a
+        layout that doesn't look like a face:
+          - eyes roughly level with each other (not stacked vertically)
+          - nose sits below the eye line and above the mouth line
+          - mouth corners sit below the nose
+          - overall box isn't a wildly non-face aspect ratio
+        Any real face at a normal camera angle satisfies all of these by
+        a wide margin; a hand, patch of skin, or other blob that merely
+        scores well on "face-shaped enough" usually violates at least one.
+        """
+        if points is None:
+            return False
+        try:
+            left_eye, right_eye, nose, mouth_l, mouth_r = points
+        except (TypeError, ValueError):
+            return False
+
+        x1, y1, x2, y2 = box
+        box_h = float(y2 - y1)
+        box_w = float(x2 - x1)
+        if box_h <= 0 or box_w <= 0:
+            return False
+
+        # Faces MTCNN detects are roughly upright rectangles, not
+        # extremely elongated blobs (a hand/forearm often is).
+        aspect = box_h / box_w
+        if not (0.7 <= aspect <= 2.3):
+            return False
+
+        eye_y_avg = (left_eye[1] + right_eye[1]) / 2.0
+        mouth_y_avg = (mouth_l[1] + mouth_r[1]) / 2.0
+
+        # Eyes should be roughly level with each other, not one far above
+        # the other (relative to the box height, so it scales with pose).
+        if abs(left_eye[1] - right_eye[1]) > 0.35 * box_h:
+            return False
+
+        # Vertical ordering: eyes above nose, nose above mouth.
+        if not (eye_y_avg < nose[1] < mouth_y_avg):
+            return False
+
+        # Nose should sit horizontally between the eyes (with some slack
+        # for head turn), not off to one side entirely.
+        eye_x_min, eye_x_max = min(left_eye[0], right_eye[0]), max(left_eye[0], right_eye[0])
+        eye_span = eye_x_max - eye_x_min
+        if eye_span > 0 and not (eye_x_min - 0.6 * eye_span <= nose[0] <= eye_x_max + 0.6 * eye_span):
+            return False
+
+        return True
+
     def crop(self, image_rgb: np.ndarray) -> dict[str, Any]:
         """
         Returns
@@ -101,7 +158,7 @@ class FaceCropper:
         try:
             from PIL import Image
             img = Image.fromarray(image_rgb.astype(np.uint8))
-            boxes, probs = self._mtcnn.detect(img)
+            boxes, probs, landmarks = self._mtcnn.detect(img, landmarks=True)
         except Exception as exc:  # noqa: BLE001
             return {"face_found": False, "crop": None, "box": None,
                      "confidence": None, "error": f"{type(exc).__name__}: {exc}"}
@@ -119,6 +176,28 @@ class FaceCropper:
         if not keep:
             return {"face_found": False, "crop": None, "box": None,
                      "confidence": None, "error": None}
+
+        # Session 6 finding #2: min_confidence alone wasn't enough. On
+        # ai_noaud2.mp4 (an AI video of just a hand), one frame's hand
+        # region scored >=0.90 confidence from the cascade classifier
+        # itself -- a genuinely hard false positive, not something a
+        # stricter score cutoff can reliably separate from real faces
+        # without also risking rejecting real side-angle/partial faces.
+        # Add an independent, geometry-based check on the 5-point
+        # landmarks MTCNN also produces (left eye, right eye, nose, mouth
+        # corners): a hand or other skin-toned blob can score well on the
+        # cascade's "is this face-shaped" pass, but its landmark regressor
+        # output won't form a coherent face layout (eyes level with each
+        # other, nose below and between them, mouth below the nose). This
+        # is a different failure mode than the confidence score and
+        # catches false positives the score alone misses.
+        keep = [i for i in keep if self._has_coherent_face_geometry(
+            landmarks[i] if landmarks is not None else None, boxes[i]
+        )]
+        if not keep:
+            return {"face_found": False, "crop": None, "box": None,
+                     "confidence": None, "error": None}
+
         boxes = [boxes[i] for i in keep]
         probs = [probs[i] for i in keep] if probs is not None else None
 
