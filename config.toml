@@ -1,0 +1,5 @@
+[client]
+# Hides the "Deploy" button and the hamburger menu in the app's top-right
+# corner. This is the supported, non-hacky way to do this (vs CSS hacks
+# that can accidentally hit the sidebar's own collapse control).
+toolbarMode = "minimal"

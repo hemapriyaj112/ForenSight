@@ -31,7 +31,262 @@ st.set_page_config(
     page_title="ForenSight",
     page_icon="🔍",
     layout="wide",
+    initial_sidebar_state="expanded",
 )
+
+# ---------------------------------------------------------------------------
+# Theme — dark UI matching the ForenSight product design
+# ---------------------------------------------------------------------------
+
+_NAV_ITEMS = [
+    ("Video Deepfake Detection", "🎬"),
+    ("Image Deepfake Detection", "🖼️"),
+    ("Reports", "📄"),
+    ("Settings", "⚙️"),
+]
+
+_FINGERPRINT_URL = "https://cdn.jsdelivr.net/gh/jdecked/twemoji@latest/assets/svg/1fac6.svg"
+_FINGERPRINT_FALLBACK_URL = "https://www.emoji.family/api/emojis/1fac6/noto/svg"
+_FINGERPRINT_IMG = (
+    f'<img src="{_FINGERPRINT_URL}" '
+    f'onerror="this.onerror=null;this.src=\'{_FINGERPRINT_FALLBACK_URL}\';" '
+    f'class="fs-fingerprint" alt="fingerprint"/>'
+)
+
+_CORNER_FRAME = (
+    '<span class="fs-corner fs-corner-tl"></span>'
+    '<span class="fs-corner fs-corner-tr"></span>'
+    '<span class="fs-corner fs-corner-bl"></span>'
+    '<span class="fs-corner fs-corner-br"></span>'
+)
+
+
+def _theme_vars(mode: str) -> dict:
+    if mode == "light":
+        return {
+            "bg": "#f4f7f9", "bg_glow": "rgba(45,212,200,0.10)",
+            "panel": "#ffffffee", "border": "rgba(15,23,32,0.10)",
+            "text": "#10151d", "text_dim": "#5b6570",
+            "sidebar_bg": "#ffffff",
+        }
+    return {
+        "bg": "#080b10", "bg_glow": "rgba(45,212,200,0.07)",
+        "panel": "#10151dcc", "border": "rgba(255,255,255,0.08)",
+        "text": "#e8edf3", "text_dim": "#8b95a1",
+        "sidebar_bg": "#0a0e14",
+    }
+
+
+def _build_css(mode: str) -> str:
+    v = _theme_vars(mode)
+    return f"""
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@700;800;900&family=Poppins:wght@600;700;800&family=Inter:wght@400;500;600;700&display=swap');
+
+:root {{
+    --fs-bg: {v['bg']};
+    --fs-panel: {v['panel']};
+    --fs-border: {v['border']};
+    --fs-text: {v['text']};
+    --fs-text-dim: {v['text_dim']};
+    --fs-accent: #2dd4c8;
+    --fs-accent-2: #22a6ee;
+}}
+
+html, body, [data-testid="stAppViewContainer"], .main, .block-container {{
+    background: radial-gradient(circle at 88% 0%, {v['bg_glow']}, transparent 40%), var(--fs-bg) !important;
+    color: var(--fs-text) !important;
+    font-family: 'Inter', sans-serif !important;
+}}
+[data-testid="stHeader"] {{ background: transparent !important; }}
+h1, h2, h3, h4 {{ color: var(--fs-text) !important; font-family: 'Poppins', sans-serif !important; }}
+p, span, label, div {{ color: var(--fs-text); }}
+.stCaption, [data-testid="stCaptionContainer"] {{ color: var(--fs-text-dim) !important; }}
+
+/* ---- Sidebar ---- */
+[data-testid="stSidebar"] {{
+    background: {v['sidebar_bg']} !important;
+    border-right: 1px solid var(--fs-border);
+    min-width: 260px !important;
+    width: 260px !important;
+}}
+[data-testid="stSidebar"] > div:first-child {{ padding-top: 0.75rem; }}
+[data-testid="collapsedControl"] {{ color: var(--fs-accent) !important; }}
+
+.fs-logo {{
+    display:flex; align-items:center; gap:.6rem;
+    padding: .4rem .6rem 1.2rem 0.6rem;
+    border-bottom: 1px solid var(--fs-border);
+    margin-bottom: 0.9rem;
+}}
+.fs-logo-text {{ display:flex; flex-direction:column; line-height:1.15; }}
+.fs-logo-name {{
+    font-family:'Orbitron', sans-serif; font-weight:800;
+    font-size:1.0rem; letter-spacing:.6px;
+}}
+.fs-logo .fs-accent {{ color: var(--fs-accent); }}
+.fs-logo-tagline {{
+    font-family:'Inter', sans-serif; font-size:0.6rem; font-weight:600;
+    letter-spacing:1.6px; color: var(--fs-text-dim); margin-top:2px;
+}}
+.fs-logo-icon {{
+    width:34px; height:34px; border-radius:50%; flex-shrink:0;
+    display:flex; align-items:center; justify-content:center;
+    background: linear-gradient(135deg, rgba(45,212,200,0.16), rgba(34,166,238,0.08));
+    border: 1px solid rgba(45,212,200,0.45);
+}}
+.fs-logo-icon img {{ width:22px; height:22px; filter: drop-shadow(0 0 3px rgba(45,212,200,0.6)) saturate(1.6) hue-rotate(6deg); }}
+
+[data-testid="stSidebar"] .stButton {{ margin-bottom: 1px; }}
+[data-testid="stSidebar"] button {{
+    text-align:left !important;
+    justify-content:flex-start !important;
+    background: transparent !important;
+    border: 1px solid transparent !important;
+    color: var(--fs-text-dim) !important;
+    font-weight:500 !important;
+    font-size: 0.9rem !important;
+    border-radius: 8px !important;
+    padding: 0.5rem 0.85rem !important;
+    box-shadow:none !important;
+}}
+[data-testid="stSidebar"] button:hover {{
+    background: rgba(45,212,200,0.06) !important;
+    color: var(--fs-text) !important;
+}}
+[data-testid="stSidebar"] button[kind="primary"] {{
+    background: rgba(45,212,200,0.10) !important;
+    color: var(--fs-accent) !important;
+    border-left: 2px solid var(--fs-accent) !important;
+    border-radius: 8px !important;
+}}
+[data-testid="stSidebar"] button[kind="primary"]:hover {{
+    background: rgba(45,212,200,0.14) !important;
+}}
+
+/* ---- Theme toggle button (top-right, main area only) ---- */
+[data-testid="stAppViewContainer"] .main [data-testid="stButton"] button {{
+    background: var(--fs-panel) !important;
+    border: 1px solid var(--fs-border) !important;
+    color: var(--fs-text) !important;
+    border-radius: 50% !important;
+    width: 42px !important; height:42px !important; padding:0 !important;
+    font-size:1.15rem !important;
+    min-height: 42px !important;
+}}
+[data-testid="stAppViewContainer"] .main [data-testid="stButton"] button:hover {{
+    border-color: var(--fs-accent) !important;
+}}
+
+/* ---- Top header card ---- */
+.fs-header-card {{
+    position: relative;
+    overflow: hidden;
+    padding: 1.6rem 2rem 1.5rem 2rem;
+    margin-bottom: 1.4rem;
+}}
+.fs-header-card h1 {{
+    font-family:'Orbitron',sans-serif !important;
+    font-size:2.3rem; font-weight:800; letter-spacing:1px;
+    margin:0; text-transform:uppercase; line-height:1.1;
+}}
+.fs-header-card h1 .fs-accent {{ color: var(--fs-accent); }}
+.fs-header-card p.fs-sub {{ color:var(--fs-text-dim) !important; margin-top:.4rem; font-size:0.95rem; letter-spacing:0.3px; }}
+
+.fs-fp-wrap {{
+    position:absolute; top:50%; right:2.2rem; transform:translateY(-50%);
+    width:120px; height:132px;
+}}
+.fs-fingerprint {{ width:100%; height:100%; opacity:0.95; filter: drop-shadow(0 0 14px rgba(45,212,200,0.45)) saturate(1.6) hue-rotate(6deg); }}
+.fs-corner {{ position:absolute; width:16px; height:16px; border-color: rgba(45,212,200,0.55); }}
+.fs-corner-tl {{ top:-10px; left:-10px; border-top:2px solid; border-left:2px solid; }}
+.fs-corner-tr {{ top:-10px; right:-10px; border-top:2px solid; border-right:2px solid; }}
+.fs-corner-bl {{ bottom:-10px; left:-10px; border-bottom:2px solid; border-left:2px solid; }}
+.fs-corner-br {{ bottom:-10px; right:-10px; border-bottom:2px solid; border-right:2px solid; }}
+
+/* ---- Card / bordered containers ---- */
+div[data-testid="stVerticalBlockBorderWrapper"] {{
+    background: var(--fs-panel) !important;
+    border: 1px solid var(--fs-border) !important;
+    border-radius: 14px !important;
+}}
+div[data-testid="stVerticalBlockBorderWrapper"] > div {{ border-radius: 14px !important; }}
+
+/* ---- File uploader ---- */
+[data-testid="stFileUploaderDropzone"] {{
+    background: rgba(255,255,255,0.015) !important;
+    border: 1.5px dashed rgba(45,212,200,0.35) !important;
+    border-radius: 12px !important;
+}}
+[data-testid="stFileUploaderDropzone"] section {{ background: transparent !important; }}
+[data-testid="stFileUploaderDropzone"] button {{
+    background: var(--fs-accent) !important;
+    color:#04211d !important;
+    border-radius:8px !important;
+    font-weight:600 !important;
+    border:none !important;
+}}
+[data-testid="stFileUploaderDropzone"] button:hover {{ background:#26e0d2 !important; }}
+
+/* ---- Misc widgets ---- */
+[data-testid="stExpander"] {{ background: var(--fs-panel) !important; border:1px solid var(--fs-border) !important; border-radius:12px !important; }}
+hr, [data-testid="stDivider"] {{ border-color: var(--fs-border) !important; }}
+.stAlert {{ border-radius: 10px !important; }}
+</style>
+"""
+
+
+def _inject_theme() -> None:
+    if "fs_theme_mode" not in st.session_state:
+        st.session_state.fs_theme_mode = "dark"
+    st.markdown(_build_css(st.session_state.fs_theme_mode), unsafe_allow_html=True)
+
+
+def _render_sidebar() -> str:
+    with st.sidebar:
+        st.markdown(
+            '<div class="fs-logo">'
+            f'<span class="fs-logo-icon">{_FINGERPRINT_IMG}</span>'
+            '<span class="fs-logo-text">'
+            '<span class="fs-logo-name">FOREN<span class="fs-accent">SIGHT</span></span>'
+            '<span class="fs-logo-tagline">TRUTH. VERIFIED.</span>'
+            '</span>'
+            '</div>',
+            unsafe_allow_html=True,
+        )
+        if "fs_page" not in st.session_state:
+            st.session_state.fs_page = "Video Deepfake Detection"
+        for label, icon in _NAV_ITEMS:
+            is_active = st.session_state.fs_page == label
+            if st.button(
+                f"{icon}  {label}",
+                key=f"nav_{label}",
+                use_container_width=True,
+                type="primary" if is_active else "secondary",
+            ):
+                st.session_state.fs_page = label
+                st.rerun()
+    return st.session_state.fs_page
+
+
+def _render_top_header(subtitle: str = "Audio-visual forensic analysis for AI-generated and manipulated media") -> None:
+    _, toggle_col = st.columns([10, 1])
+    with toggle_col:
+        is_dark = st.session_state.fs_theme_mode == "dark"
+        if st.button("🌙" if is_dark else "☀️", key="fs_theme_toggle", help="Toggle light / dark mode"):
+            st.session_state.fs_theme_mode = "light" if is_dark else "dark"
+            st.rerun()
+
+    header_html = (
+        '<div class="fs-header-card">'
+        '<h1>FOREN<span class="fs-accent">SIGHT</span></h1>'
+        f'<p class="fs-sub">{subtitle}</p>'
+        '<div class="fs-fp-wrap">'
+        f'{_FINGERPRINT_IMG}{_CORNER_FRAME}'
+        '</div>'
+        '</div>'
+    )
+    st.markdown(header_html, unsafe_allow_html=True)
 
 def _build_detailed_summary(
     headline: str,
@@ -741,7 +996,7 @@ def run_image_pipeline(uploaded_file) -> ImageResult:
 # ---------------------------------------------------------------------------
 
 def _video_tab() -> None:
-    st.header("🎬 Video Deepfake Detection")
+    st.markdown("#### 🛡️ VIDEO DEEPFAKE DETECTION")
     st.caption("Upload a video to analyse it for audio-visual manipulation.")
 
     uploaded = st.file_uploader(
@@ -944,16 +1199,25 @@ def _image_tab() -> None:
 # Main entry point
 # ---------------------------------------------------------------------------
 
+def _placeholder_page(title: str, icon: str) -> None:
+    with st.container(border=True):
+        st.markdown(f"#### {icon} {title}")
+        st.caption("This section isn't wired up yet — coming in a future update.")
+
+
 def main_app() -> None:
-    st.title("🔍 ForenSight — Deepfake Detection Dashboard")
+    _inject_theme()
+    page = _render_sidebar()
+    _render_top_header()
 
-    tab_video, tab_image = st.tabs(["🎬 Video", "🖼️ Image"])
-
-    with tab_video:
-        _video_tab()
-
-    with tab_image:
-        _image_tab()
+    if page == "Video Deepfake Detection":
+        with st.container(border=True):
+            _video_tab()
+    elif page == "Image Deepfake Detection":
+        with st.container(border=True):
+            _image_tab()
+    else:
+        _placeholder_page(page, dict(_NAV_ITEMS)[page])
 
 
 if __name__ == "__main__":
