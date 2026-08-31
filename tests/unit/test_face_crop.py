@@ -14,8 +14,11 @@ Session 6 regression coverage:
 """
 from __future__ import annotations
 
+import sys
+
 import numpy as np
 import pytest
+from unittest.mock import patch
 
 from pipeline.forensics.face_crop import FaceCropper
 
@@ -41,6 +44,25 @@ _INCOHERENT_LANDMARKS = np.array([
 ])
 
 
+def _flat_image_with_patches(size: int, patches: list[tuple[float, float, int]], seed: int = 0) -> np.ndarray:
+    """A uniform mid-grey image (near-zero Laplacian variance everywhere)
+    with small random-noise squares stamped at given (cx, cy, amplitude)
+    points -- amplitude 0 leaves that spot flat. Used to give the bilateral
+    texture-symmetry check something real to measure, since it inspects
+    actual pixel content rather than just the landmark coordinates."""
+    rng = np.random.default_rng(seed)
+    image = np.full((size, size, 3), 128, dtype=np.uint8)
+    patch = 7
+    half = patch // 2
+    for cx, cy, amplitude in patches:
+        y0, x0 = int(cy) - half, int(cx) - half
+        if amplitude <= 0:
+            continue
+        noise = rng.integers(128 - amplitude, 128 + amplitude + 1, size=(patch, patch, 3))
+        image[y0 : y0 + patch, x0 : x0 + patch, :] = noise
+    return image
+
+
 def _make_cropper_with_fake_mtcnn(boxes, probs, landmarks=None, min_confidence: float = 0.90) -> FaceCropper:
     cropper = FaceCropper.__new__(FaceCropper)  # bypass __init__'s real MTCNN load
     cropper.margin = 0.4
@@ -48,6 +70,7 @@ def _make_cropper_with_fake_mtcnn(boxes, probs, landmarks=None, min_confidence: 
     cropper.min_confidence = min_confidence
     cropper.available = True
     cropper.load_error = None
+    cropper.backend = "mtcnn"
     landmarks_out = landmarks
 
     class _FakeMTCNN:
@@ -78,7 +101,10 @@ class TestFaceCropperConfidenceFiltering:
             probs=np.array([0.995]),
             landmarks=np.array([_COHERENT_FACE_LANDMARKS]),
         )
-        image = np.zeros((100, 100, 3), dtype=np.uint8)
+        image = _flat_image_with_patches(100, [
+            (20.0, 20.0, 40), (40.0, 20.0, 40),  # eyes, matching amplitude
+            (22.0, 40.0, 40), (38.0, 40.0, 40),  # mouth corners, matching
+        ])
         result = cropper.crop(image)
         assert result["face_found"] is True
         assert result["confidence"] == pytest.approx(0.995)
@@ -94,7 +120,10 @@ class TestFaceCropperConfidenceFiltering:
             probs=np.array([0.40, 0.98]),
             landmarks=np.array([_COHERENT_FACE_LANDMARKS, _COHERENT_FACE_LANDMARKS * 0.5]),
         )
-        image = np.zeros((100, 100, 3), dtype=np.uint8)
+        image = _flat_image_with_patches(100, [
+            (10.0, 10.0, 40), (20.0, 10.0, 40),  # scaled-down eyes (*0.5 box)
+            (11.0, 20.0, 40), (19.0, 20.0, 40),  # scaled-down mouth corners
+        ])
         result = cropper.crop(image)
         assert result["face_found"] is True
         assert result["confidence"] == pytest.approx(0.98)
@@ -112,10 +141,12 @@ class TestFaceCropperConfidenceFiltering:
         cropper.min_confidence = 0.90
         cropper.available = False
         cropper.load_error = "torch not installed"
+        cropper.backend = None
         cropper._mtcnn = None
         result = cropper.crop(np.zeros((10, 10, 3), dtype=np.uint8))
         assert result["face_found"] is False
         assert result["error"] == "torch not installed"
+        assert result["backend"] is None
 
 
 class TestFaceCropperGeometryFiltering:
@@ -177,6 +208,189 @@ class TestFaceCropperGeometryFiltering:
             probs=np.array([0.96]),
             landmarks=np.array([turned_landmarks]),
         )
-        image = np.zeros((100, 100, 3), dtype=np.uint8)
+        image = _flat_image_with_patches(100, [
+            (18.0, 19.0, 40), (39.0, 21.0, 35),
+            (21.0, 39.0, 38), (37.0, 41.0, 42),
+        ])
         result = cropper.crop(image)
         assert result["face_found"] is True
+
+
+class TestFaceCropperTextureSymmetry:
+    """
+    Session 6 finding #3: the geometry check wasn't enough either -- real
+    diagnostic data pulled from the actual false-positive frame in
+    ai_noaud2.mp4 (a hand, no face) showed MTCNN's landmark regressor had
+    produced a geometrically plausible-looking layout anyway (a known
+    failure mode: it was only ever trained on real faces, so it defaults
+    to something face-shaped rather than garbage on out-of-distribution
+    input). The real discriminator found in that data: a genuine face's
+    two eyes -- and two mouth corners -- have local contrast/edge energy
+    within the same rough order of magnitude of each other. On the hand,
+    one landmark point happened to land on a knuckle/finger-gap edge while
+    its mirror point sat on smooth skin, producing 13x (eyes) and 617x
+    (mouth) left/right gaps no real face would show.
+    """
+
+    def test_real_ai_noaud2_false_positive_data_is_rejected(self):
+        # Exact numbers from the user's diagnose_face_false_positive.py run
+        # against ai_noaud2.mp4 frame_000006.jpg.
+        cropper = FaceCropper.__new__(FaceCropper)
+        points = np.array([
+            [466.2, 181.1],  # left_eye
+            [486.2, 190.6],  # right_eye
+            [472.6, 197.2],  # nose
+            [452.2, 207.1],  # mouth_left
+            [467.3, 215.0],  # mouth_right
+        ])
+        real_vars = {
+            (466.2, 181.1): 197.99395751953125,
+            (486.2, 190.6): 2626.44287109375,
+            (472.6, 197.2): 126.7009048461914,
+            (452.2, 207.1): 5.667226314544678,
+            (467.3, 215.0): 3497.695556640625,
+        }
+        cropper._local_variance = lambda gray, cx, cy, patch=7: real_vars[(cx, cy)]
+        # Geometry check passes on this real data (confirmed via the
+        # diagnostic script) -- this test isolates that the NEW check is
+        # what catches it.
+        assert cropper._has_coherent_face_geometry(
+            points, np.array([434.7, 147.9, 501.1, 234.5])
+        ) is True
+        assert cropper._has_bilateral_texture_symmetry(
+            np.zeros((300, 600, 3), dtype=np.uint8), points
+        ) is False
+
+    def test_symmetric_texture_is_accepted(self):
+        cropper = FaceCropper.__new__(FaceCropper)
+        image = _flat_image_with_patches(100, [
+            (20.0, 20.0, 40), (40.0, 20.0, 45),
+            (22.0, 40.0, 38), (38.0, 40.0, 42),
+        ])
+        assert cropper._has_bilateral_texture_symmetry(image, _COHERENT_FACE_LANDMARKS) is True
+
+    def test_asymmetric_texture_is_rejected_despite_valid_geometry(self):
+        cropper = FaceCropper.__new__(FaceCropper)
+        image = _flat_image_with_patches(100, [
+            (20.0, 20.0, 5),    # left eye: near-flat, low contrast
+            (40.0, 20.0, 50),   # right eye: strong edge -- big asymmetry
+            (22.0, 40.0, 38), (38.0, 40.0, 40),  # mouth corners fine
+        ])
+        assert cropper._has_bilateral_texture_symmetry(image, _COHERENT_FACE_LANDMARKS) is False
+
+    def test_fully_flat_patch_is_rejected_even_if_symmetric(self):
+        cropper = FaceCropper.__new__(FaceCropper)
+        image = np.full((100, 100, 3), 128, dtype=np.uint8)  # perfectly uniform
+        assert cropper._has_bilateral_texture_symmetry(image, _COHERENT_FACE_LANDMARKS) is False
+
+    def test_landmark_near_frame_edge_does_not_reject_on_this_check_alone(self):
+        cropper = FaceCropper.__new__(FaceCropper)
+        image = np.full((30, 30, 3), 128, dtype=np.uint8)
+        # _COHERENT_FACE_LANDMARKS' points (up to x=40, y=40) fall outside
+        # this tiny 30x30 image -- local_variance patches run off the edge.
+        assert cropper._has_bilateral_texture_symmetry(image, _COHERENT_FACE_LANDMARKS) is True
+
+
+class TestSmoothAiFaceRecall:
+    """
+    Session 7 regression: the bilateral-texture floor was originally 8.0,
+    which rejected smooth AI-GENERATED faces wholesale -- synthetic skin
+    renders with very low local edge energy on BOTH sides (symmetric,
+    ratio ~1), so an entire multi-face AI video produced 0/46 detected
+    faces, the trained classifier never ran on a single frame, and the
+    video was called REAL from texture alone. The floor now only has to
+    stop two trivially-equal near-zero values; these tests pin that
+    behaviour on both sides.
+    """
+
+    @staticmethod
+    def _cropper_with_fixed_variances(variances: dict) -> FaceCropper:
+        cropper = FaceCropper.__new__(FaceCropper)
+        cropper._local_variance = lambda gray, cx, cy, patch=7: variances[(cx, cy)]
+        return cropper
+
+    def test_smooth_but_symmetric_ai_face_is_accepted(self):
+        # Both eye patches below the OLD 8.0 floor yet structured (>2.0)
+        # and symmetric -- exactly what a rendered AI face looks like.
+        vars_map = {(20.0, 20.0): 3.1, (40.0, 20.0): 3.4,
+                    (22.0, 40.0): 2.6, (38.0, 40.0): 2.9}
+        cropper = self._cropper_with_fixed_variances(vars_map)
+        image = np.full((100, 100, 3), 128, dtype=np.uint8)  # content unused (variance mocked)
+        assert cropper._has_bilateral_texture_symmetry(image, _COHERENT_FACE_LANDMARKS) is True
+
+    def test_truly_blank_patches_still_rejected_below_new_floor(self):
+        vars_map = {(20.0, 20.0): 0.5, (40.0, 20.0): 0.6,
+                    (22.0, 40.0): 0.5, (38.0, 40.0): 0.6}
+        cropper = self._cropper_with_fixed_variances(vars_map)
+        image = np.full((100, 100, 3), 128, dtype=np.uint8)
+        assert cropper._has_bilateral_texture_symmetry(image, _COHERENT_FACE_LANDMARKS) is False
+
+
+class TestOpenCvHaarFallback:
+    """
+    Session 7 regression: facenet_pytorch wasn't importable in the user's
+    active environment, and the cropper used to go silently unavailable --
+    every frame of every video reported "no face", the trained classifier
+    never ran anywhere, and AI videos were labelled REAL from texture
+    alone with no hint anything was wrong. The cropper must now degrade to
+    an OpenCV Haar cascade instead, and say that it did.
+    """
+
+    @staticmethod
+    def _haar_cropper(boxes) -> FaceCropper:
+        cropper = FaceCropper.__new__(FaceCropper)
+        cropper.margin = 0.4
+        cropper.min_face_size = 20
+        cropper.min_confidence = 0.80
+        cropper.available = True
+        cropper.load_error = None
+        cropper.backend = "opencv_haar"
+        cropper._mtcnn = None
+
+        class _FakeHaar:
+            def __init__(self, out):
+                self._out = np.array(out, dtype=np.float32).reshape(-1, 4)
+
+            def detectMultiScale(self, gray, scaleFactor=1.1, minNeighbors=5, minSize=(20, 20)):
+                return self._out if len(self._out) else []
+
+        cropper._haar = _FakeHaar(boxes)
+        return cropper
+
+    def test_fallback_detects_box_without_landmarks_or_confidence(self):
+        cropper = self._haar_cropper([[10, 10, 40, 48]])
+        result = cropper.crop(np.zeros((120, 120, 3), dtype=np.uint8))
+        assert result["face_found"] is True
+        assert result["backend"] == "opencv_haar"
+        assert result["confidence"] is None   # Haar gives no score
+        assert result["landmarks"] is None    # landmark checks skipped, not failed
+        assert result["crop"] is not None
+
+    def test_fallback_rejects_elongated_limb_like_boxes(self):
+        cropper = self._haar_cropper([[10, 10, 20, 80]])  # aspect ~4:1 -- a limb
+        result = cropper.crop(np.zeros((200, 120, 3), dtype=np.uint8))
+        assert result["face_found"] is False
+
+    def test_fallback_no_detections_returns_clean_no_face(self):
+        cropper = self._haar_cropper([])
+        result = cropper.crop(np.zeros((120, 120, 3), dtype=np.uint8))
+        assert result["face_found"] is False
+        assert result["error"] is None
+        assert result["backend"] == "opencv_haar"
+
+    def test_load_falls_back_to_opencv_when_facenet_missing(self):
+        import sys
+        with patch.dict(sys.modules, {"facenet_pytorch": None}):
+            cropper = FaceCropper()
+        assert cropper.available is True
+        assert cropper.backend == "opencv_haar"
+        assert "facenet_pytorch" in (cropper.load_error or "")
+
+    def test_unavailable_when_both_backends_missing(self):
+        import sys
+        with patch.dict(sys.modules, {"facenet_pytorch": None, "cv2": None}):
+            cropper = FaceCropper()
+        assert cropper.available is False
+        assert cropper.load_error
+        assert "facenet_pytorch" in cropper.load_error
+        assert "opencv" in cropper.load_error
