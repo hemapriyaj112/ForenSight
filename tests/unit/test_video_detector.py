@@ -71,7 +71,9 @@ class TestVideoDetectorDetect:
         frames = [_make_frame(seed=i) for i in range(4)]
         result = VideoDetector().detect(frames)
         expected = float(np.mean([fr.fake_prob for fr in result.frame_results]))
-        assert result.fake_prob == pytest.approx(expected, abs=1e-9)
+        temporal_score = result.metadata.get("temporal_analysis", {}).get("score", 0.3)
+        expected = 0.7 * expected + 0.3 * temporal_score
+        assert result.fake_prob == pytest.approx(expected, abs=1e-6)
 
     def test_empty_frame_list_gives_zero_prob_and_no_frame_results(self):
         result = VideoDetector().detect([])
@@ -273,6 +275,50 @@ class TestClassifierWiring:
         assert result.metadata["classifier_error"] == "network unreachable"
 
 
+class TestFaceDetectorStatusSurfacing:
+    """
+    Session 7 regression: facenet_pytorch wasn't importable in the user's
+    active environment, so every frame of every video reported "no face
+    detected", the trained classifier never ran, and AI videos were called
+    REAL from texture alone -- with nothing in the output distinguishing
+    "faceless footage" from "detector broken". The backend and load error
+    must now be surfaced in both modalities' metadata.
+    """
+
+    def test_video_metadata_surfaces_face_detector_backend_and_error(self):
+        fake_cropper = MagicMock()
+        fake_cropper.available = False
+        fake_cropper.backend = None
+        fake_cropper.load_error = "facenet_pytorch: ModuleNotFoundError; opencv fallback: ImportError"
+        detector = VideoDetector(face_cropper=fake_cropper)
+        result = detector.detect([_make_frame(seed=0)])
+        assert result.metadata["face_detector_backend"] is None
+        assert result.metadata["face_detector_error"].startswith("facenet_pytorch")
+
+    def test_video_metadata_surfaces_degraded_backend(self):
+        fake_cropper = MagicMock()
+        fake_cropper.available = True
+        fake_cropper.backend = "opencv_haar"
+        fake_cropper.load_error = None
+        detector = VideoDetector(face_cropper=fake_cropper)
+        result = detector.detect([_make_frame(seed=0)])
+        assert result.metadata["face_detector_backend"] == "opencv_haar"
+        assert result.metadata["face_detector_error"] is None
+
+    def test_image_metadata_surfaces_face_detector_error(self):
+        fake_classifier = MagicMock()
+        fake_classifier.available = False
+        fake_cropper = MagicMock()
+        fake_cropper.available = False
+        fake_cropper.backend = None
+        fake_cropper.load_error = "boom"
+        detector = ImageDetector(ai_classifier=fake_classifier, face_cropper=fake_cropper)
+        result = detector.detect(
+            _make_frame(seed=0), include_noise=False, include_ela=False, include_spectral=False,
+        )
+        assert result.metadata["face_detector_error"] == "boom"
+
+
 class TestTextureCorroborationGate:
     """
     Regression tests for a real production bug (session 5, reported by the
@@ -397,6 +443,190 @@ class TestFaceCropGating:
         clf.predict.assert_called_once()
         called_with = clf.predict.call_args[0][0]
         assert called_with.shape == (64, 64, 3)  # full frame, cropping never engaged
+
+
+class TestBackwardsClassifierFlipFix:
+    """
+    Regression tests for AI videos being flagged REAL (false negatives).
+
+    Two defects made the session-5 backwards-classifier correction dead
+    code at the video level:
+      1. It re-fused frames with hardcoded 0.55/0.45 texture/classifier
+         weights, but video frames actually fuse at 0.15/0.85.
+      2. It never updated pre_ceiling_score — and since a flip always
+         makes avg_classifier >= 0.65 (>= fake_threshold), the aggregate
+         corroboration gate then overwrote `overall` with a mean of the
+         STALE pre-flip pre-ceiling values, reinstating the backwards
+         reading. A confidently-AI clip (texture .90 / classifier .27,
+         the measured signature from classifier_validation_results.json)
+         scored 0.36 at video level and fused to ~0.28 REAL.
+
+    The texture bar also moved 0.60 -> 0.50 (_STRONG_TEXTURE): the
+    measured backwards-AI reference clip averaged texture 0.53 and was
+    missed by the old bar.
+    """
+
+    @staticmethod
+    def _detector(texture_score: float, clf_scores: list[float],
+                  face_pattern: list[bool]):
+        cropper = MagicMock()
+        cropper.crop.side_effect = [
+            {"face_found": found,
+             "crop": np.zeros((32, 32, 3), dtype=np.uint8) if found else None,
+             "box": (0, 0, 32, 32) if found else None,
+             "confidence": 0.99 if found else None, "error": None}
+            for found in face_pattern
+        ]
+        clf = MagicMock()
+        clf.available = True
+        clf.backend = "transformers"
+        clf.predict.side_effect = [
+            {"score": s, "available": True, "findings": ["mock"],
+             "backend": "transformers"}
+            for s in clf_scores
+        ]
+        detector = VideoDetector(ai_classifier=clf, face_cropper=cropper)
+        patcher = patch.object(
+            detector._image_detector._gradcam, "score_and_overlay",
+            return_value=(texture_score, np.zeros((64, 64, 3), dtype=np.uint8)),
+        )
+        return detector, patcher
+
+    def test_backwards_classifier_flip_recovers_video_score(self):
+        # Measured backwards-AI signature: texture pinned high, classifier
+        # confidently reading "real". The flip must now survive the
+        # aggregate corroboration gate instead of being overwritten by
+        # stale pre-flip values.
+        n = 10
+        clf_scores = [0.27 + (0.03 if i % 2 else -0.03) for i in range(n)]
+        detector, patcher = self._detector(0.90, clf_scores, [True] * n)
+        frames = [_make_frame(seed=i) for i in range(n)]
+        with patcher:
+            result = detector.detect(frames)
+        assert result.metadata["classifier_flipped"] is True
+        assert result.fake_prob >= 0.60
+
+    def test_flip_updates_pre_ceiling_scores_in_sync(self):
+        n = 10
+        clf_scores = [0.27 + (0.03 if i % 2 else -0.03) for i in range(n)]
+        detector, patcher = self._detector(0.90, clf_scores, [True] * n)
+        frames = [_make_frame(seed=i) for i in range(n)]
+        with patcher:
+            result = detector.detect(frames)
+        for fr in result.frame_results:
+            # pre_ceiling_score must reflect the CORRECTED classifier
+            # reading, not the stale pre-flip one (~0.36 under the old bug)
+            assert fr.pre_ceiling_score == pytest.approx(fr.fake_prob)
+            assert fr.pre_ceiling_score > 0.60
+
+    def test_flip_fires_for_moderate_texture(self):
+        # ai_vid_without_audio.mp4 averaged texture 0.53 — below the old
+        # 0.60 bar, so its backwards classifier readings were never flipped.
+        n = 10
+        clf_scores = [0.25 + (0.02 if i % 2 else -0.02) for i in range(n)]
+        detector, patcher = self._detector(0.53, clf_scores, [True] * n)
+        frames = [_make_frame(seed=i) for i in range(n)]
+        with patcher:
+            result = detector.detect(frames)
+        assert result.metadata["classifier_flipped"] is True
+
+
+class TestUncorroboratedVideoEvidenceFlag:
+    """
+    The uncorroborated-evidence ceiling exists to stop texture-only
+    suspicion producing a confident FAKE — it must not invert into a
+    confident REAL either. VideoDetector records when strong visual
+    evidence went unconfirmed; Fuser uses this to refuse a REAL verdict
+    (see test_fuser.py::TestRealVerdictGuard).
+    """
+
+    @staticmethod
+    def _detect(texture_score: float, clf_score: float | None):
+        cropper = MagicMock()
+        cropper.crop.return_value = {
+            "face_found": True, "crop": np.zeros((32, 32, 3), dtype=np.uint8),
+            "box": (0, 0, 32, 32), "confidence": 0.99, "error": None,
+        }
+        clf = None
+        if clf_score is not None:
+            clf = MagicMock()
+            clf.available = True
+            clf.backend = "transformers"
+            clf.predict.return_value = {
+                "score": clf_score, "available": True,
+                "findings": ["mock"], "backend": "transformers",
+            }
+        detector = VideoDetector(ai_classifier=clf, face_cropper=cropper)
+        with patch.object(
+            detector._image_detector._gradcam, "score_and_overlay",
+            return_value=(texture_score, np.zeros((64, 64, 3), dtype=np.uint8)),
+        ):
+            return detector.detect([_make_frame(seed=0)])
+
+    def test_strong_texture_without_corroboration_sets_flag(self):
+        result = self._detect(0.85, 0.45)   # mid-range classifier: no flip, no corroboration
+        assert result.metadata["uncorroborated_video_evidence"] is True
+
+    def test_no_classifier_with_strong_texture_sets_flag(self):
+        result = self._detect(0.85, None)
+        assert result.metadata["uncorroborated_video_evidence"] is True
+
+    def test_corroborating_classifier_does_not_set_flag(self):
+        result = self._detect(0.85, 0.80)
+        assert result.metadata["uncorroborated_video_evidence"] is False
+
+    def test_weak_texture_does_not_set_flag(self):
+        # Low-texture content (e.g. document-heavy real footage) carries no
+        # strong visual suspicion — REAL verdicts stay reachable there.
+        result = self._detect(0.20, 0.30)
+        assert result.metadata["uncorroborated_video_evidence"] is False
+
+
+class TestConfiguredAggregationWiring:
+    """fusion.aggregation/fusion.percentile were declared in config.yaml but
+    silently ignored (hardcoded "mean") — verify they're honoured now."""
+
+    @staticmethod
+    def _cfg_namespace(aggregation: str, percentile: float):
+        from types import SimpleNamespace
+        fusion = SimpleNamespace(
+            video_weight=0.6, audio_weight=0.4, real_threshold=0.40,
+            fake_threshold=0.60, aggregation=aggregation, percentile=percentile,
+        )
+        return SimpleNamespace(video=SimpleNamespace(frame_rate=1), fusion=fusion)
+
+    @staticmethod
+    def _no_face_cropper(detector: VideoDetector) -> None:
+        cropper = MagicMock()
+        cropper.crop.return_value = {
+            "face_found": False, "crop": None, "box": None,
+            "confidence": None, "error": None,
+        }
+        detector._face_cropper = cropper
+        detector._image_detector._face_cropper = cropper
+
+    def test_cfg_none_defaults_to_mean(self):
+        frames = [_make_frame(seed=i) for i in range(5)]
+        result = VideoDetector(cfg=None).detect(frames)
+        expected = float(np.mean([fr.fake_prob for fr in result.frame_results]))
+        temporal = result.metadata["temporal_analysis"]["score"]
+        assert result.fake_prob == pytest.approx(0.7 * expected + 0.3 * temporal)
+
+    def test_percentile_aggregation_from_cfg(self):
+        # Frame scores deliberately bimodal: mean != p90.
+        scores = [0.59, 0.59, 0.59, 0.59, 0.10]
+        detector = VideoDetector(cfg=self._cfg_namespace("percentile", 90.0))
+        self._no_face_cropper(detector)
+        with patch.object(
+            detector._image_detector._gradcam, "score_and_overlay",
+            side_effect=[(s, np.zeros((64, 64, 3), dtype=np.uint8)) for s in scores],
+        ):
+            frames = [_make_frame(seed=i) for i in range(len(scores))]
+            result = detector.detect(frames)
+        frame_probs = [fr.fake_prob for fr in result.frame_results]
+        p90 = float(np.percentile(np.array(frame_probs), 90.0))
+        temporal = result.metadata["temporal_analysis"]["score"]
+        assert result.fake_prob == pytest.approx(0.7 * p90 + 0.3 * temporal)
 
 
 class TestAggregateCorroborationGate:
@@ -550,14 +780,53 @@ class TestTwoSegmentReporting:
         assert result.metadata["face_segment"] is None
         assert result.metadata["non_face_segment"] is not None
 
-    def test_document_frame_never_falsely_counted_as_face_segment(self):
+    def test_document_frame_with_no_face_never_counted_as_face_segment(self):
         # Regression: real_vid_to_test.mp4 (book pages, MTCNN-confirmed
         # zero faces) was showing up with 17/21 frames in the FACE segment
-        # at REAL 1%. Root cause: document frames skip the classifier (and
-        # therefore face-cropping, which only runs as part of the
-        # classifier step) entirely, leaving face_crop_out as None -- and
-        # the old fallback defaulted face_detected to True in that case,
+        # at REAL 1%. Root cause (session 6 fix): document frames skipped
+        # face-cropping entirely, leaving face_crop_out as None -- and the
+        # old fallback defaulted face_detected to True in that case,
         # silently mislabeling every document frame as "a face was found".
+        #
+        # Session 7: face-cropping is no longer gated behind "not a
+        # document" (see test below) -- it now always runs, and this test
+        # uses a realistic mock (a real book page has no actual face, so
+        # crop() genuinely returns face_found=False) to confirm the
+        # original book-pages bug still can't reoccur: a document frame
+        # with no real face still correctly skips the classifier and
+        # never lands in the face segment.
+        clf = self._make_fake_classifier()
+        cropper = MagicMock()
+        cropper.crop.return_value = {
+            "face_found": False, "crop": None, "box": None,
+            "confidence": None, "error": None,
+        }
+        detector = VideoDetector(ai_classifier=clf, face_cropper=cropper)
+        with patch("pipeline.forensics.document_detector.looks_like_document",
+                   return_value={"is_document": True, "colorfulness": 0.0}):
+            result = detector.detect([_make_frame(seed=0)])
+
+        cropper.crop.assert_called_once()  # face-crop IS attempted now (session 7)
+        clf.predict.assert_not_called()    # but no face found -> classifier still skipped
+        assert result.frame_results[0].face_detected is False
+        assert result.metadata["face_segment"] is None
+        assert result.metadata["non_face_segment"] is not None
+
+    def test_document_frame_with_real_face_still_gets_classified(self):
+        # Session 7 false-negative fix: a "Legion of AI" repost video (AI-
+        # generated content wrapped in a letterboxed template with a
+        # white-text caption banner) tripped document_detector.py's
+        # colorfulness/edge-density heuristic on 76% of frames -- not
+        # because those frames were documents, but because the black
+        # letterbox bars + caption text happened to match the same
+        # signature. Under the old code, face-cropping was nested inside
+        # `not doc_out["is_document"]`, so a real, clearly visible face in
+        # those frames was silently hidden and never reached the
+        # classifier at all -- exactly the kind of false negative this
+        # test guards against. A frame with a genuine detected face should
+        # still be classified via its face crop even when the whole frame
+        # trips the document heuristic, since a frame with a real face is
+        # essentially never an actual document photo.
         clf = self._make_fake_classifier()
         cropper = MagicMock()
         cropper.crop.return_value = {
@@ -569,8 +838,8 @@ class TestTwoSegmentReporting:
                    return_value={"is_document": True, "colorfulness": 0.0}):
             result = detector.detect([_make_frame(seed=0)])
 
-        cropper.crop.assert_not_called()   # face-crop never even attempted
-        clf.predict.assert_not_called()    # classifier never ran on a document page
-        assert result.frame_results[0].face_detected is False
-        assert result.metadata["face_segment"] is None
-        assert result.metadata["non_face_segment"] is not None
+        cropper.crop.assert_called_once()
+        clf.predict.assert_called_once_with(cropper.crop.return_value["crop"])
+        assert result.frame_results[0].face_detected is True
+        assert result.metadata["face_segment"] is not None
+        assert result.metadata["non_face_segment"] is None

@@ -1,42 +1,95 @@
 video:
   frame_rate: 1          # frames per second to sample
-  face_confidence: 0.90
+  # Min confidence a face-detection candidate must reach to count as a
+  # face. 0.90 rejected genuine faces in AI-generated footage (MTCNN reads
+  # synthetic skin at lower confidence), silently zeroing out detection for
+  # whole videos; 0.80 keeps casual cascade noise out while the geometry +
+  # bilateral-texture checks in FaceCropper remain the real FP guards.
+  face_confidence: 0.80
   weights: "models/efficientnet_v2s.pt"
+
+# GenConViT — a real, free, locally-runnable pretrained video deepfake
+# detector (MIT). See pipeline/genconvit/ and reports/PHASE2A_GENCONVIT_REPORT.md.
+# `enabled` turns the detector on; `use_in_final_fusion` controls whether its
+# score is blended into the production video verdict. PHASE 2A keeps
+# use_in_final_fusion=false so GenConViT is measured independently against the
+# texture heuristic / provenance / existing verdict before it is ever fused.
+genconvit:
+  enabled: true
+  use_in_final_fusion: false
+  weights_dir: "models/genconvit"   # where genconvit_{ed,vae}_inference.pth live
+  num_frames: 15                     # evenly-sampled frames fed to the model
+  use_vae: true                     # also load the VAE branch (combined model)
+  fp16: true                        # half precision when on CUDA
 
 audio:
   sample_rate: 16000
   n_mels: 80
   hop_length: 160
   weights: "models/rawnet2.pt"
+  segment_duration: 2.0   # shorter segments = faster analysis (default 4.0)
 
-# Real trained AI-vs-real image classifier (optional). Leave model_path
-# blank/null to keep using the 5 statistical heuristics only. Point
-# model_path at either a single .onnx file, or a local folder with a
-# Hugging Face transformers model (config.json + weights +
-# preprocessor_config.json). See pipeline/forensics/ai_classifier.py for
-# full format details.
+# AASIST — a real, free, locally-runnable pretrained audio anti-spoofing
+# detector (MIT, official clovaai/aasist checkpoint). See pipeline/aasist/ and
+# reports/PHASE2B_AASIST_EVALUATION.md. `enabled` turns the detector on;
+# `use_in_final_fusion` controls whether its score is blended into the audio
+# verdict. PHASE 2B keeps use_in_final_fusion=false so AASIST is measured
+# independently (and never leaks into the production fake_prob/fusion).
+aasist:
+  enabled: true
+  use_in_final_fusion: false
+  weights_dir: "models/aasist"   # where AASIST.pth lives
+  window_samples: 64600          # upstream nb_samp (~4.04 s @ 16 kHz)
+
+# Performance mode
+# fast_mode: true  → single model, skip temporal analysis, lighter audio
+# fast_mode: false → full ensemble + temporal + full audio (default)
+fast_mode: false
+
+# Trained AI-vs-real image classifier (optional). The system supports both
+# single-model mode (legacy) and multi-model ensemble mode (recommended).
 #
-# Currently ENABLED: models/ai_classifier is prithivMLmods/deepfake-
-# detector-model-v1 (SigLIP-based). Tested against a known Gemini-edited
-# photo: correctly scored 95% AI-probability (a prior candidate model,
-# dima806/deepfake_vs_real_image_detection, confidently scored 0% on the
-# same photo and was rejected — see docs/AI_CLASSIFIER_SETUP.md for that
-# comparison). With the photo's metadata stripped, this model still pushed
-# the fused score to 56% (UNCERTAIN) rather than confidently REAL.
+# ENSEMBLE MODE (recommended): set `ensemble.enabled: true` and list models
+# under `ensemble.models`. Each model is a free HuggingFace Hub repo or
+# local ONNX file. Predictions are weighted-averaged — diversity across
+# architectures and training sets consistently beats any single model.
+#
+# Free models known to work well (all downloadable from HuggingFace Hub):
+#   - prithivMLmods/deepfake-detector-model-v1   (SigLIP-based, strong on faces)
+#   - dima806/deepfake_vs_real_image_detection   (EfficientNet-based ensemble)
+#   - WaleedAgrawal/SecurityAI                   (general forgery detector)
+#   - tonyassi/deepfake-detector                  (trained on multiple datasets)
+#
+# SINGLE MODEL (legacy): set `ensemble.enabled: false` and use the fields
+# below. This is kept for backward compatibility.
 #
 # KNOWN LIMITATION: false-positive risk on document/text-page photos (book
 # pages, receipts, notes) — real testing found both this classifier and
 # the noise-floor heuristic misread flat printed paper as AI-suspicious.
 # Mitigated by pipeline/forensics/document_detector.py, which detects that
-# case and skips the classifier signal for it — see that module's
-# docstring for how it works and its own limitations (small calibration
-# set, may not catch colorful/illustrated documents).
-image_ai_classifier:
+# case and skips the classifier signal for it.
+
+ensemble:
   enabled: true
+  models:
+    - path: "prithivMLmods/deepfake-detector-model-v1"
+      backend: "transformers"
+      weight: 1.0
+      input_size: 224
+      ai_class_index: 0
+    - path: "dima806/deepfake_vs_real_image_detection"
+      backend: "transformers"
+      weight: 0.8
+      input_size: 224
+      ai_class_index: 0
+
+# Legacy single-model config (used only when ensemble.enabled: false)
+image_ai_classifier:
+  enabled: false
   model_path: "prithivMLmods/deepfake-detector-model-v1"
   backend: "transformers"
   input_size: 224
-  ai_class_index: 0      # for ONNX 2-class outputs: which column is "AI/Fake"
+  ai_class_index: 0
 
 fusion:
   video_weight: 0.6
@@ -44,6 +97,9 @@ fusion:
   real_threshold: 0.40   # fused score below this → REAL
   fake_threshold: 0.60   # fused score above this → FAKE
   # between thresholds → UNCERTAIN
+  aggregation: "percentile"  # "mean" or "percentile"
+  percentile: 90.0           # which percentile when aggregation=percentile
+  confidence_weighting: false # reduce weight of uncertain modalities
 
 database:
   path: "forensight.db"

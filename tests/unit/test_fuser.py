@@ -349,6 +349,58 @@ class TestFuseEndToEnd:
 # Softmax
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# False-negative guard — REAL verdicts refused on uncorroborated video evidence
+# ---------------------------------------------------------------------------
+
+class TestRealVerdictGuard:
+    """
+    VideoDetector caps uncorroborated texture evidence just below the fake
+    threshold so it can't alone produce a confident FAKE. But that capped
+    score, diluted by fusion with a clean-reading audio track (the audio
+    heuristics routinely score AI/TTS audio as "real"), slipped below the
+    REAL threshold — certifying AI videos as REAL. When the video side
+    flags `uncorroborated_video_evidence`, a would-be REAL must become
+    UNCERTAIN; FAKE and natural UNCERTAIN verdicts are untouched.
+    """
+
+    @staticmethod
+    def _video_meta(flag: bool) -> ModalResult:
+        vm = _vm(0.45)
+        vm.metadata = {"uncorroborated_video_evidence": flag}
+        return vm
+
+    def test_real_downgraded_to_uncertain_when_flag_set(self):
+        # 0.6*0.45 + 0.4*0.10 = 0.31 → would be REAL without the guard.
+        f = Fuser(video_weight=0.6, audio_weight=0.4,
+                  real_threshold=0.40, fake_threshold=0.60)
+        result = f.fuse(self._video_meta(True), _am(0.10))
+        assert result.verdict == Verdict.UNCERTAIN
+        assert result.fused_score < 0.40          # score itself stays truthful
+        assert _meta(result, "real_verdict_downgraded") is True
+
+    def test_real_preserved_without_flag(self):
+        f = Fuser(video_weight=0.6, audio_weight=0.4,
+                  real_threshold=0.40, fake_threshold=0.60)
+        result = f.fuse(self._video_meta(False), _am(0.10))
+        assert result.verdict == Verdict.REAL
+        assert _meta(result, "real_verdict_downgraded") is False
+
+    def test_fake_verdict_unaffected_by_flag(self):
+        f = Fuser(video_weight=0.6, audio_weight=0.4,
+                  real_threshold=0.40, fake_threshold=0.60)
+        vm = _vm(0.9)
+        vm.metadata = {"uncorroborated_video_evidence": True}
+        result = f.fuse(vm, _am(0.9))
+        assert result.verdict == Verdict.FAKE
+
+    def test_missing_metadata_key_is_safe(self):
+        # ModalResults built by older callers/tests carry no flag at all.
+        f = Fuser(video_weight=0.6, audio_weight=0.4)
+        result = f.fuse(_vm(0.1), _am(0.1))
+        assert result.verdict == Verdict.REAL
+
+
 def test_softmax_sums_to_one():
     s = _softmax(np.array([1.0, 2.0, 3.0]))
     assert abs(s.sum() - 1.0) < 1e-9

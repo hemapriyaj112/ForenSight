@@ -51,7 +51,7 @@ from pipeline.video.detector import VideoDetector
 from utils.config import CFG
 from utils.demux import DemuxError, demux
 from utils.logger import get_logger
-from utils.types import AnalysisResult, Verdict
+from utils.types import AnalysisResult, ModalResult, Verdict
 
 log = get_logger("forensight.main")
 
@@ -70,16 +70,45 @@ _VERDICT_EXIT: dict[Verdict, int] = {
 _OUTPUT_CHOICES = ("json", "db", "both")
 
 
-def _load_ai_classifier() -> AIClassifier | None:
+def _load_ai_classifier():
     """
-    Loads the optional trained AI-vs-real image classifier from config, if
-    enabled — same config block (image_ai_classifier) and same model used
-    by the image tab in app.py, reused here because the classifier operates
-    per-frame on ordinary RGB arrays regardless of whether the frame came
-    from an uploaded photo or a sampled video frame. Returns None if
-    disabled/unconfigured/failed to load; VideoDetector/ImageDetector both
-    handle that gracefully and fall back to the heuristic-only pipeline.
+    Loads the optional trained AI-vs-real image classifier(s) from config.
+
+    Supports two modes:
+      1. Ensemble mode (recommended): loads multiple free HuggingFace models
+         and averages their predictions. Enabled when config.ensemble.enabled
+         is true.
+      2. Single model mode (legacy): loads one model. Enabled when
+         config.image_ai_classifier.enabled is true.
+
+    Returns None if disabled/unconfigured/failed to load; VideoDetector/
+    ImageDetector both handle that gracefully and fall back to the
+    heuristic-only pipeline.
     """
+    ensemble_cfg = getattr(CFG, "ensemble", None)
+    if ensemble_cfg is not None and getattr(ensemble_cfg, "enabled", False):
+        models = getattr(ensemble_cfg, "models", []) or []
+        if not models:
+            log.warning("Ensemble mode enabled but no models configured")
+            return None
+        from pipeline.forensics.ensemble_classifier import EnsembleClassifier
+        clf = EnsembleClassifier(models=models)
+        # TASK 3: models load lazily on first predict(); the constructor alone
+        # does NOT load them, so status must be evaluated AFTER the load attempt.
+        clf._ensure_loaded()
+        if not clf.available:
+            log.warning(
+                "Ensemble classifier unavailable after load attempt: %s",
+                clf.load_error,
+            )
+        else:
+            log.info(
+                "Ensemble classifier loaded (%d model(s)): %s",
+                len(clf.models),
+                [m.get("path") for m in clf.models],
+            )
+        return clf
+
     cfg = getattr(CFG, "image_ai_classifier", None)
     if cfg is None or not getattr(cfg, "enabled", False):
         return None
@@ -95,6 +124,169 @@ def _load_ai_classifier() -> AIClassifier | None:
     if not clf.available:
         log.warning("AI classifier enabled in config but failed to load: %s", clf.load_error)
     return clf
+
+
+# ---------------------------------------------------------------------------
+# TASK 3 — honest, structured detector status (ACTIVE_MODEL / ACTIVE_HEURISTIC
+# / INACTIVE). Never call a stub ACTIVE. Intended for startup reporting so the
+# UI/operators can see exactly what is and isn't actually running.
+# ---------------------------------------------------------------------------
+STATUS_ACTIVE_MODEL = "ACTIVE_MODEL"
+STATUS_ACTIVE_HEURISTIC = "ACTIVE_HEURISTIC"
+STATUS_INACTIVE = "INACTIVE"
+
+
+def get_detector_status(cfg=None, classifier=None) -> list[dict]:
+    """Return an honest per-detector status report.
+
+    Returns a list of dicts {name, category, status, detail}. `classifier` is
+    an already-loaded EnsembleClassifier (optional); if None it is loaded once
+    here so the report reflects the real post-load availability.
+    """
+    cfg = cfg or CFG
+    statuses: list[dict] = []
+
+    eff_w = getattr(getattr(cfg, "video", None), "weights", "models/efficientnet_v2s.pt")
+    raw_w = getattr(getattr(cfg, "audio", None), "weights", "models/rawnet2.pt")
+
+    # --- Configured neural nets that are NOT actually loaded (stubs/heuristics)
+    statuses.append({
+        "name": "EfficientNetV2 (video)",
+        "category": STATUS_INACTIVE, "status": STATUS_INACTIVE,
+        "detail": f"config.video.weights={eff_w} never loaded; 'models/' absent. "
+                  "Video 'texture' score is a Laplacian-variance heuristic, not a network.",
+    })
+    statuses.append({
+        "name": "RawNet2 (audio)",
+        "category": STATUS_INACTIVE, "status": STATUS_INACTIVE,
+        "detail": f"config.audio.weights={raw_w} absent; RawNet2Classifier is a stub. "
+                  "Audio uses heuristic forensics only.",
+    })
+    statuses.append({
+        "name": "GradCAM (neural)",
+        "category": STATUS_INACTIVE, "status": STATUS_INACTIVE,
+        "detail": "VideoDetector._GradCAM runs _stub_forward (model=None); not a network.",
+    })
+    statuses.append({
+        "name": "ELA / Noise-floor / Spectral-FFT",
+        "category": STATUS_INACTIVE, "status": "INACTIVE(for video)",
+        "detail": "excluded from the video pipeline; only active on the image tab.",
+    })
+
+    # --- Real (non-ML) heuristic signals that DO run
+    statuses.append({"name": "Audio heuristic forensics", "category": STATUS_ACTIVE_HEURISTIC,
+                     "status": "ACTIVE",
+                     "detail": "spectral stability / phase incoherence / MFCC / flux / ZCR."})
+    statuses.append({"name": "Video texture heuristic", "category": STATUS_ACTIVE_HEURISTIC,
+                     "status": "ACTIVE", "detail": "per-frame Laplacian variance."})
+    statuses.append({"name": "Metadata / C2PA provenance", "category": STATUS_ACTIVE_HEURISTIC,
+                     "status": "ACTIVE", "detail": "EXIF/C2PA/generator signature scan."})
+    statuses.append({"name": "Temporal localization", "category": STATUS_ACTIVE_HEURISTIC,
+                     "status": "ACTIVE", "detail": "frame-to-frame consistency."})
+    statuses.append({"name": "Document detector", "category": STATUS_ACTIVE_HEURISTIC,
+                     "status": "ACTIVE", "detail": "colour/edge heuristic gating the classifier."})
+
+    # --- Real loaded model
+    statuses.append({"name": "Face cropper (MTCNN)", "category": STATUS_ACTIVE_MODEL,
+                     "status": "ACTIVE", "detail": "facenet_pytorch face detection."})
+
+    # --- AI image classifier ensemble (evaluated AFTER load attempt)
+    if classifier is None:
+        classifier = _load_ai_classifier()
+    if classifier is not None and getattr(classifier, "available", False):
+        loaded = [m.get("path") for m in getattr(classifier, "models", [])]
+        statuses.append({
+            "name": "AI image classifier (ensemble)",
+            "category": STATUS_ACTIVE_MODEL, "status": "ACTIVE",
+            "detail": f"loaded from HuggingFace Hub at runtime: {loaded}. "
+                      "Validated as reading BACKWARDS on video -> disabled for video "
+                      "verdicts (Task 2); still used for IMAGE analysis.",
+        })
+    else:
+        statuses.append({
+            "name": "AI image classifier (ensemble)",
+            "category": STATUS_INACTIVE, "status": STATUS_INACTIVE,
+            "detail": f"unavailable after load attempt: {getattr(classifier, 'load_error', 'no model')}.",
+        })
+
+    # --- Video image-classifier contribution (post Task 2): explicitly INACTIVE
+    statuses.append({
+        "name": "video_image_classifier",
+        "category": STATUS_INACTIVE, "status": STATUS_INACTIVE,
+        "detail": "Classifier behavior is reversed/invalid for current video preprocessing "
+                  "and requires independent validation; disabled for video verdicts (Task 2).",
+    })
+
+    # --- GenConViT (Phase 2A): real pretrained video deepfake detector.
+    # Report ACTIVE_MODEL only if the weights actually loaded and inference is
+    # possible. Any load failure yields INACTIVE with the exact reason — never
+    # a silent texture-heuristic fallback.
+    gc_cfg = getattr(cfg, "genconvit", None)
+    if gc_cfg is not None and getattr(gc_cfg, "enabled", False):
+        from pipeline.genconvit.detector import GenConViTDetector
+        import os
+        from pathlib import Path
+
+        wdir = getattr(gc_cfg, "weights_dir", "models/genconvit")
+        if not os.path.isabs(wdir):
+            wdir = str(_HERE / wdir)
+        gc = GenConViTDetector(
+            weights_dir=wdir,
+            num_frames=getattr(gc_cfg, "num_frames", 15) or 15,
+            use_vae=bool(getattr(gc_cfg, "use_vae", True)),
+            fp16=bool(getattr(gc_cfg, "fp16", True)),
+        )
+        if gc.ensure_loaded():
+            statuses.append({
+                "name": "GenConViT (video)",
+                "category": STATUS_ACTIVE_MODEL, "status": "ACTIVE",
+                "detail": (
+                    f"branches={gc.branches} device={gc.device}; weights in "
+                    f"{gc._weights_dir}. Kept OUT of final fusion until evaluation "
+                    "(config.genconvit.use_in_final_fusion=false)."
+                    + (f" note={gc.load_error}" if gc.load_error else "")
+                ),
+            })
+        else:
+            statuses.append({
+                "name": "GenConViT (video)",
+                "category": STATUS_INACTIVE, "status": STATUS_INACTIVE,
+                "detail": f"INACTIVE: {gc.load_error}",
+            })
+
+    # --- AASIST (Phase 2B): real pretrained audio anti-spoofing detector.
+    # Report ACTIVE_MODEL only if the official weights actually loaded. Any
+    # failure yields INACTIVE with the exact reason — never a heuristic
+    # fallback. Kept OUT of the audio verdict (evaluation-only, Phase 2B).
+    a_config = getattr(cfg, "aasist", None)
+    if a_config is not None and getattr(a_config, "enabled", False):
+        from pipeline.aasist.detector import AASISTDetector
+
+        wdir = getattr(a_config, "weights_dir", "models/aasist")
+        if not os.path.isabs(wdir):
+            wdir = str(_HERE / wdir)
+        aa = AASISTDetector(
+            weights_dir=wdir,
+            window_samples=getattr(a_config, "window_samples", 64600) or 64600,
+        )
+        if aa.ensure_loaded():
+            statuses.append({
+                "name": "AASIST (audio anti-spoofing)",
+                "category": STATUS_ACTIVE_MODEL, "status": "ACTIVE",
+                "detail": (
+                    f"official checkpoint loaded (params={aa.model_params}, "
+                    f"device={aa.device}); weights in {aa._weights_dir}. "
+                    "Kept OUT of the audio verdict until evaluation "
+                    "(config.aasist.use_in_final_fusion=false)."
+                ),
+            })
+        else:
+            statuses.append({
+                "name": "AASIST (audio anti-spoofing)",
+                "category": STATUS_INACTIVE, "status": STATUS_INACTIVE,
+                "detail": f"INACTIVE: {aa.load_error}",
+            })
+    return statuses
 
 
 # ---------------------------------------------------------------------------
@@ -179,22 +371,42 @@ def run_pipeline(
     except DemuxError:
         raise  # propagate; callers handle display
 
+    fast_mode = getattr(getattr(CFG, "fast_mode", None), "enabled", False)
+
     # Step 4 — video
-    ai_classifier = _load_ai_classifier()
-    video_detector = VideoDetector(CFG, ai_classifier=ai_classifier)
+    # TASK 2: the image classifier is DISABLED for the VIDEO pipeline. It was
+    # validated as reversed/invalid on video frames (reports/FULL_BACKEND_AUDIT.md),
+    # so it must not influence video verdicts until independently validated. It
+    # stays available for IMAGE analysis (app.run_image_pipeline). Passing None
+    # keeps VideoDetector purely heuristic + provenance for video.
+    video_detector = VideoDetector(CFG, ai_classifier=None, fast_mode=fast_mode)
     video_bytes = video_path.read_bytes()
     video_result = video_detector.run(frames_dir, video_bytes=video_bytes, video_path=str(video_path))
 
     # Step 5 — audio
     audio_detector = AudioDetector(CFG)
-    audio_result = audio_detector.run(wav_path)
+    audio_segments = audio_detector.run(wav_path)
+    if audio_segments:
+        audio_fake_prob = sum(s.fake_prob for s in audio_segments) / len(audio_segments)
+    else:
+        audio_fake_prob = 0.5
+    audio_result = ModalResult(
+        modality="audio",
+        fake_prob=audio_fake_prob,
+        audio_results=audio_segments,
+        error=None if audio_segments else "Empty audio file",
+    )
 
     # Step 6 — fusion
+    fusion_cfg = getattr(CFG, "fusion", None)
     fuser = Fuser(
-        video_weight=CFG.fusion.video_weight,
-        audio_weight=CFG.fusion.audio_weight,
-        real_threshold=CFG.fusion.real_threshold,
-        fake_threshold=CFG.fusion.fake_threshold,
+        video_weight=getattr(fusion_cfg, "video_weight", 0.6),
+        audio_weight=getattr(fusion_cfg, "audio_weight", 0.4),
+        real_threshold=getattr(fusion_cfg, "real_threshold", 0.40),
+        fake_threshold=getattr(fusion_cfg, "fake_threshold", 0.60),
+        aggregation=getattr(fusion_cfg, "aggregation", "mean"),
+        percentile=getattr(fusion_cfg, "percentile", 90.0),
+        confidence_weighting=getattr(fusion_cfg, "confidence_weighting", False),
     )
     result = fuser.fuse(
         video_result=video_result,

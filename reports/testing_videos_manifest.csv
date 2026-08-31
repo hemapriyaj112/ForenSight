@@ -1,0 +1,18 @@
+filename,path,type,ground_truth,duration_seconds,fps,resolution,has_audio,codec,filesize_mb
+ai_noaud2.mp4,C:\Users\Hemapriya\Documents\ForenSight docs\testing_videos\ai\ai_noaud2.mp4,,FAKE,10.0,24.0,,False,,
+ai_vid_without_audio.mp4,C:\Users\Hemapriya\Documents\ForenSight docs\testing_videos\ai\ai_vid_without_audio.mp4,,FAKE,10.005,24.0,,True,,
+avengers ai vid 1.mp4,C:\Users\Hemapriya\Documents\ForenSight docs\testing_videos\ai\avengers ai vid 1.mp4,,FAKE,46.599592,30.0,,True,,
+avengers ai vid 2.mp4,C:\Users\Hemapriya\Documents\ForenSight docs\testing_videos\ai\avengers ai vid 2.mp4,,FAKE,37.848526,24.0,,True,,
+crackers_withaud.mp4,C:\Users\Hemapriya\Documents\ForenSight docs\testing_videos\ai\crackers_withaud.mp4,,FAKE,10.005,24.0,,True,,
+gemini ai video.mp4,C:\Users\Hemapriya\Documents\ForenSight docs\testing_videos\ai\gemini ai video.mp4,,FAKE,10.005,24.0,,True,,
+girl walkin video.mp4,C:\Users\Hemapriya\Documents\ForenSight docs\testing_videos\ai\girl walkin video.mp4,,FAKE,10.005,24.0,,True,,
+girl_speaking video gemini.mp4,C:\Users\Hemapriya\Documents\ForenSight docs\testing_videos\ai\girl_speaking video gemini.mp4,,FAKE,10.005,24.0,,True,,
+insta vid.mp4,C:\Users\Hemapriya\Documents\ForenSight docs\testing_videos\ai\insta vid.mp4,,FAKE,41.491202,30.0,,True,,
+real vid ai aud.mp4,C:\Users\Hemapriya\Documents\ForenSight docs\testing_videos\ai\real vid ai aud.mp4,,FAKE,102.259274,30.0,,True,,
+south indian women speaking.mp4,C:\Users\Hemapriya\Documents\ForenSight docs\testing_videos\ai\south indian women speaking.mp4,,FAKE,10.005,24.0,,True,,
+WhatsApp Video 2026-07-24 at 6.15.45 PM.mp4,C:\Users\Hemapriya\Documents\ForenSight docs\testing_videos\real\WhatsApp Video 2026-07-24 at 6.15.45 PM.mp4,,REAL,57.615,24.993,,True,,
+WhatsApp Video 2026-07-24 at 6.15.46 PM.mp4,C:\Users\Hemapriya\Documents\ForenSight docs\testing_videos\real\WhatsApp Video 2026-07-24 at 6.15.46 PM.mp4,,REAL,13.404354,30.033,,True,,
+real_vid_to_test_withaudio.mp4,C:\Users\Hemapriya\Documents\ForenSight docs\testing_videos\real\real_vid_to_test_withaudio.mp4,,REAL,21.115667,25.014,,True,,
+vid_with_noaudio.mp4,C:\Users\Hemapriya\Documents\ForenSight docs\testing_videos\real\vid_with_noaudio.mp4,,REAL,9.221867,29.604,,False,,
+photo_to_test_AI.webp,C:\Users\Hemapriya\Documents\ForenSight docs\testing_videos\photo_to_test_AI.webp,image,UNKNOWN,,,613x350,False,webp,0.01
+saree pic pongal celeb.png,C:\Users\Hemapriya\Documents\ForenSight docs\testing_videos\saree pic pongal celeb.png,image,UNKNOWN,,,880x1206,False,png,2.15

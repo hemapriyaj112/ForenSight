@@ -11,6 +11,8 @@ from __future__ import annotations
 
 import io
 import json
+import shutil
+import subprocess
 import tempfile
 from pathlib import Path
 
@@ -18,6 +20,7 @@ import plotly.graph_objects as go
 import streamlit as st
 
 import main  # ForenSight CLI orchestrator
+from pipeline.analysis.reliability import build_runtime_reliability
 from pipeline.forensics import explain as _explain
 from pipeline.forensics.ai_classifier import AIClassifier
 from pipeline.video.detector import ImageDetector
@@ -542,6 +545,153 @@ def render_video_score_chart(video_result) -> None:
         )
 
 
+def _probe_media_for_reliability(video_path: str) -> dict:
+    """Read-only ffprobe media metadata used only for domain-risk reporting.
+
+    Best-effort: never raises.  Any failure returns an empty dict so the
+    reliability section can still render from the detector outputs alone.
+    """
+    out: dict = {}
+    if not video_path or not Path(video_path).exists():
+        return out
+    ffprobe = shutil.which("ffprobe")
+    if not ffprobe:
+        return out
+    try:
+        r = subprocess.run(
+            [ffprobe, "-v", "quiet", "-print_format", "json",
+             "-show_format", "-show_streams", video_path],
+            capture_output=True, text=True, timeout=60,
+        )
+        data = json.loads(r.stdout or "{}")
+        fmt = data.get("format", {})
+        br = fmt.get("bit_rate")
+        if br:
+            out["bitrate_kbps"] = round(int(br) / 1000, 1)
+        out["has_audio"] = any(
+            s.get("codec_type") == "audio" for s in data.get("streams", [])
+        )
+        for s in data.get("streams", []):
+            if s.get("codec_type") == "video":
+                w, h = s.get("width"), s.get("height")
+                if w and h:
+                    out["resolution"] = f"{w}x{h}"
+                break
+    except Exception:
+        return {}
+    return out
+
+
+def render_reliability_section(reliability: dict) -> None:
+    """Phase 3A — Evidence Reliability / Domain-Risk reporting section.
+
+    Display-only.  This renders metadata about how trustworthy each
+    detector's evidence is in this media context.  It NEVER changes the
+    production verdict and must not be confused with the final verdict.
+
+    Layout separates:
+      * Final production verdict   (already shown above the gauge)
+      * Neural evaluation signals  (GenConViT / AASIST — evaluation-only)
+      * Evidence reliability       (HIGH/MODERATE/LOW/DOMAIN-RISK/UNAVAILABLE)
+      * Domain-risk indicators     (LOW_BITRATE, WHATSAPP, MISSING_AUDIO, ...)
+    """
+    if not reliability:
+        return
+
+    st.divider()
+    st.subheader("🧪 Evidence Reliability & Domain Risk")
+
+    # Neutral 'state' readout (not a verdict — always visually distinct).
+    state = reliability.get("overall_reliability") or "UNAVAILABLE"
+    _state_style = {
+        "HIGH": ("#0f5132", "#d1e7dd"),
+        "MODERATE": ("#664d03", "#fff3cd"),
+        "LOW": ("#495057", "#e2e3e5"),
+        "DOMAIN-RISK": ("#842029", "#f8d7da"),
+        "UNAVAILABLE": ("#495057", "#e2e3e5"),
+    }.get(state, ("#495057", "#e2e3e5"))
+    st.markdown(
+        f"<span style='background-color:{_state_style[1]};color:{_state_style[0]};"
+        f"padding:4px 12px;border-radius:8px;font-size:0.9rem;font-weight:600;'>"
+        f"Overall evidence reliability: {state}</span>",
+        unsafe_allow_html=True,
+    )
+    st.caption(
+        "Reliability describes how trustworthy the detector evidence is in "
+        "this media context. It is NOT the final verdict and does not change it."
+    )
+
+    # Neural evaluation signals (GenConViT / AASIST — evaluation-only).
+    modalities = reliability.get("modalities", {})
+    gc = modalities.get("genconvit", {}) or {}
+    aa = modalities.get("aasist", {}) or {}
+
+    with st.expander("🤖 Neural Evaluation Signals (evaluation-only)", expanded=True):
+        _gc_dir = (gc.get("evidence_direction") or {}).get("evidence_direction")
+        _gc_avail = gc.get("available", False)
+        if _gc_avail:
+            st.markdown(
+                f"**GenConViT**: {_gc_dir or 'unavailable'} "
+                f"(coverage: {(gc.get('coverage') or {}).get('status', 'unknown')})"
+            )
+        else:
+            st.markdown("**GenConViT**: unavailable")
+
+        _aa_dir = (aa.get("evidence_direction") or {}).get("evidence_direction")
+        _aa_avail = aa.get("available", False)
+        if _aa_avail:
+            st.markdown(
+                f"**AASIST**: {_aa_dir} "
+                f"(segment pattern: {(aa.get('segment_pattern') or {}).get('segment_pattern', 'unknown')})"
+            )
+        else:
+            st.markdown("**AASIST**: unavailable (evaluation-only; not run in live analysis)")
+        st.caption(
+            "These are evaluation-only neural detectors. Their readings are "
+            "informational and do NOT feed into the final production verdict."
+        )
+        # Explicit guard against confusing AASIST SPOOF with video FAKE.
+        if _aa_avail and _aa_dir == "FAKE_EVIDENCE":
+            st.caption(
+                "ⓘ AASIST SPOOF evidence is an AUDIO-level reading. It does "
+                "NOT by itself establish that the entire video is fake."
+            )
+
+    # Evidence reliability per modality.
+    with st.expander("🧾 Evidence Reliability", expanded=True):
+        for name, meta in (("GenConViT", gc), ("AASIST", aa)):
+            rel = meta.get("reliability", "UNAVAILABLE")
+            st.markdown(f"- **{name}**: {rel}")
+        st.caption(
+            "DOMAIN-RISK caps how much a detector's output can be trusted "
+            "under the present media conditions — it does not mean the "
+            "detector is 'wrong'."
+        )
+
+    # Domain-risk indicators.
+    domain_risk = reliability.get("domain_risk", {})
+    flags = domain_risk.get("flags", []) or []
+    with st.expander("🚦 Domain-Risk Indicators", expanded=bool(flags)):
+        if not flags:
+            st.caption("No domain-risk indicators observed.")
+        for f in flags:
+            st.markdown(
+                f"- **{f.get('flag')}** ({f.get('severity', '')}): "
+                f"{f.get('reason', '')}"
+            )
+        st.caption(
+            "Domain-risk indicators describe media conditions that reduce "
+            "detector reliability. They are NOT proof of manipulation."
+        )
+
+    # Human-readable explanations (Task 9).
+    explanations = reliability.get("explanations", []) or []
+    if explanations:
+        with st.expander("📝 Forensic Explanation", expanded=False):
+            for e in explanations:
+                st.markdown(f"- {e}")
+
+
 def render_video_provenance(video_result) -> None:
     """Container-level C2PA/generator-tag scan + classifier status — the
     video analog of the image tab's metadata expander, but surfaced more
@@ -609,7 +759,20 @@ def render_video_segments(video_result) -> None:
             if details:
                 st.caption(" · ".join(details))
         else:
-            st.caption("No face was detected in any sampled frame.")
+            _fd_err = meta.get("face_detector_error")
+            if _fd_err:
+                # Distinguish "this footage genuinely has no faces" from
+                # "the face detector is broken" -- they look identical in
+                # the segment data but mean opposite things about how much
+                # the overall verdict can be trusted.
+                st.warning(
+                    "⚠️ The face detector failed to load, so the trained AI-image "
+                    f"classifier never ran on any frame of this video ({_fd_err}). "
+                    "The score above is texture-only and far less reliable than a "
+                    "face-based reading."
+                )
+            else:
+                st.caption("No face was detected in any sampled frame.")
 
     with col_bg:
         st.markdown("**Rest of the footage**")
@@ -952,13 +1115,28 @@ def render_image_download_button(result: ImageResult) -> None:
 
 
 @st.cache_resource
-def _load_ai_classifier() -> AIClassifier | None:
+def _load_ai_classifier():
     """
-    Loads the optional trained AI-vs-real image classifier once per server
+    Loads the optional trained AI-vs-real image classifier(s) once per server
     process (not once per upload) if config/config.yaml enables it. Returns
     None if disabled/unconfigured — ImageDetector already handles that
     gracefully and falls back to the 5-heuristic pipeline unchanged.
     """
+    ensemble_cfg = getattr(CFG, "ensemble", None)
+    if ensemble_cfg is not None and getattr(ensemble_cfg, "enabled", False):
+        models = getattr(ensemble_cfg, "models", []) or []
+        if not models:
+            st.warning("Ensemble mode enabled but no models configured")
+            return None
+        from pipeline.forensics.ensemble_classifier import EnsembleClassifier
+        clf = EnsembleClassifier(models=models)
+        if not clf.available:
+            st.warning(
+                f"⚠️ Ensemble classifier failed to load: {clf.load_error}. "
+                f"Falling back to heuristic-only detection."
+            )
+        return clf
+
     cfg = getattr(CFG, "image_ai_classifier", None)
     if cfg is None or not getattr(cfg, "enabled", False):
         return None
@@ -1084,8 +1262,14 @@ def _video_tab() -> None:
             f"{_face_seg['verdict'].lower()} ({_face_seg['score']:.0%})."
         )
     elif _non_face_seg:
+        _fd_err = _seg_meta.get("face_detector_error")
+        _why_no_face = (
+            "the face detector failed to load, so the trained classifier never ran"
+            if _fd_err
+            else "no face was detected in any sampled frame"
+        )
         _extra_lines.append(
-            f"No face was detected in any sampled frame, so this call is based "
+            f"Because {_why_no_face}, this call is based "
             f"purely on visual texture patterns across the footage "
             f"({_non_face_seg['score']:.0%})."
         )
@@ -1124,6 +1308,22 @@ def _video_tab() -> None:
         st.divider()
         st.subheader("Verdict Timeline")
         render_verdict_timeline(result.metadata)
+
+    # Phase 3A — Evidence Reliability & Domain-Risk reporting (display only;
+    # does not change the production verdict above).
+    try:
+        probe = _probe_media_for_reliability(video_path)
+        reliability = build_runtime_reliability(
+            video_result=result.video_result,
+            audio_result=result.audio_result,
+            filename=Path(video_path).name,
+            verdict=_verdict_str(result.verdict),
+            fusion_score=result.fused_score,
+            probe=probe,
+        )
+        render_reliability_section(reliability)
+    except Exception as _rel_exc:  # pragma: no cover - reporting must never crash
+        st.caption(f"ℹ️ Reliability reporting unavailable: {_rel_exc}")
 
     st.divider()
     render_download_button(result)

@@ -218,16 +218,28 @@ class Fuser:
         The test suite uses _assign_verdict() directly with its own args.
     video_calibrator, audio_calibrator:
         Optional sklearn-compatible calibrators with predict_proba().
+    aggregation:
+        How to aggregate per-frame video scores into a single video score.
+        "mean" (default): simple average across frames.
+        "percentile": use the Nth percentile of per-frame scores, which
+          treats the single most-suspicious frame as more representative
+          than the average — useful when only a few frames show clear
+          manipulation while most look clean.
+    percentile:
+        Which percentile to use when aggregation="percentile" (default 90).
     """
 
     def __init__(
         self,
         video_weight:      float = 0.6,
         audio_weight:      float = 0.4,
-        real_threshold:    float = 0.40,   # kept for main.py
-        fake_threshold:    float = 0.60,   # kept for main.py
+        real_threshold:    float = 0.40,
+        fake_threshold:    float = 0.60,
         video_calibrator:  Any   = None,
         audio_calibrator:  Any   = None,
+        aggregation:       str   = "mean",
+        percentile:        float = 90.0,
+        confidence_weighting: bool = False,
     ) -> None:
         total = video_weight + audio_weight
         if total == 0.0:
@@ -238,6 +250,9 @@ class Fuser:
         self.fake_threshold   = fake_threshold
         self.video_calibrator = video_calibrator
         self.audio_calibrator = audio_calibrator
+        self.aggregation      = aggregation if aggregation in ("mean", "percentile") else "mean"
+        self.percentile       = float(np.clip(percentile, 0.0, 100.0))
+        self.confidence_weighting = confidence_weighting
 
     # ------------------------------------------------------------------
     # Calibrator fitting
@@ -306,10 +321,15 @@ class Fuser:
 
         v_raw = video_result.fake_prob
         a_raw = audio_result.fake_prob
+        # Audio may be INACTIVE (e.g. no audio track): its fake_prob is then
+        # None. Never feed a "fake-looking" numeric probability into fusion or
+        # calibration — use a neutral 0.5 placeholder that is never actually
+        # weighted (audio_available below guards it out of the average).
+        a_raw_safe = a_raw if a_raw is not None else 0.5
 
         # Calibrate each modality
         v_cal = _calibrate(v_raw, self.video_calibrator)
-        a_cal = _calibrate(a_raw, self.audio_calibrator)
+        a_cal = _calibrate(a_raw_safe, self.audio_calibrator)
 
         # If audio couldn't be analysed at all (e.g. the source video has
         # no audio stream — common for muted/silent clips), its fake_prob
@@ -318,26 +338,85 @@ class Fuser:
         # otherwise-confident video-only verdict toward "uncertain" for no
         # real reason, so fall back to 100% video weight for this fusion
         # instead of the configured video/audio split.
-        audio_available = audio_result.error is None
+        # Audio is only "available" (real evidence) when it actually analysed
+        # a track. A missing track yields fake_prob=None and error="No audio
+        # track" — fusion must skip it rather than treat it as evidence.
+        audio_available = audio_result.error is None and audio_result.fake_prob is not None
         if audio_available:
             eff_video_weight, eff_audio_weight = self.video_weight, self.audio_weight
         else:
             eff_video_weight, eff_audio_weight = 1.0, 0.0
 
+        # Confidence-weighted adjustment: if a modality's calibrated score
+        # is near 0.5 (uncertain), reduce its effective weight because it
+        # carries less information. Only active when explicitly enabled.
+        if self.confidence_weighting:
+            video_confidence = 2.0 * abs(v_cal - 0.5)
+            audio_confidence = 2.0 * abs(a_cal - 0.5)
+            conf_vw = eff_video_weight * (0.5 + 0.5 * video_confidence)
+            conf_aw = eff_audio_weight * (0.5 + 0.5 * audio_confidence)
+            conf_total = conf_vw + conf_aw
+            if conf_total > 0:
+                conf_vw /= conf_total
+                conf_aw /= conf_total
+        else:
+            conf_vw = eff_video_weight
+            conf_aw = eff_audio_weight
+            video_confidence = 0.0
+            audio_confidence = 0.0
+
         # Weighted fused score, clipped to [0, 1]
         fused = float(np.clip(
-            eff_video_weight * v_cal + eff_audio_weight * a_cal,
+            conf_vw * v_cal + conf_aw * a_cal,
             0.0, 1.0,
         ))
 
         # Verdict: use the real/fake threshold pair (0.40 / 0.60 by default)
-        # as a proper three-zone boundary. NOTE: the previous implementation
-        # called _assign_verdict(fused, threshold=self.fake_threshold, band=0.0),
-        # which collapses to a single 0.6 cutoff for BOTH real and fake —
-        # any score below 60% was silently reported as REAL even when it
-        # should have been UNCERTAIN or FAKE. self._threshold() applies the
-        # intended two-boundary logic instead.
+        # as a proper three-zone boundary.
         verdict = self._threshold(fused)
+
+        # FALSE-NEGATIVE GUARD (AI videos flagged REAL): the video detector
+        # caps uncorroborated texture evidence just below the fake
+        # threshold so it can't produce a confident FAKE on its own. That
+        # cap also drags the video score to <= ~0.59, so once fusion mixes
+        # in a low audio reading (the audio heuristics routinely score
+        # clean-sounding AI/TTS audio as "real"), the combined score slips
+        # below the REAL threshold and an AI video with strong-but-
+        # unconfirmed visual suspicion is certified "REAL". The ceiling was
+        # introduced to withhold confident FAKE verdicts, not to mint
+        # confident REAL ones — so when VideoDetector flags that its visual
+        # evidence was actually strong but went unconfirmed, downgrade a
+        # would-be REAL to UNCERTAIN (FAKE/UNCERTAIN verdicts are left
+        # untouched). Real videos are unaffected unless their own visual
+        # heuristics were strongly suspicious AND no trained model could
+        # confirm them — exactly the situation where "REAL" overclaims.
+        video_meta = getattr(video_result, "metadata", None) or {}
+        self.uncorroborated_video_evidence = bool(
+            video_meta.get("uncorroborated_video_evidence", False)
+        )
+        real_verdict_downgraded = False
+        if self.uncorroborated_video_evidence and verdict == Verdict.REAL:
+            verdict = Verdict.UNCERTAIN
+            real_verdict_downgraded = True
+
+        # ------------------------------------------------------------------
+        # TASK 1 — Explicit provenance override. A definitive AI-generation
+        # provenance/manifest signal must not be diluted by the weighted
+        # average (e.g. a video with provenance_score=0.97 had video_score
+        # 0.9, but fusion with a low audio reading dropped the fused score
+        # below the FAKE threshold -> UNCERTAIN). This does NOT alter the
+        # 0.40/0.60 boundaries; it forces FAKE when provenance is definitive.
+        prov_score = video_meta.get("provenance_score")
+        prov_override = False
+        prov_reason = None
+        if isinstance(prov_score, (int, float)) and prov_score >= 0.90:
+            prov_override = True
+            prov_reason = (
+                f"Definitive AI-generation provenance/manifest signal "
+                f"(provenance_score={prov_score:.3f} >= 0.90); forcing FAKE "
+                f"verdict regardless of weighted-average fusion."
+            )
+            verdict = Verdict.FAKE
 
         # Align audio scores to frames and store on audio_result
         audio_scores = _align_audio_to_video(
@@ -349,8 +428,8 @@ class Fuser:
         # Build verdict timeline: list of (timestamp, fused_score) tuples
         verdict_timeline = [
             (fr.timestamp_sec, float(np.clip(
-                eff_video_weight * _calibrate(fr.fake_prob, self.video_calibrator)
-                + eff_audio_weight * (audio_scores[i] if audio_scores else a_cal),
+                conf_vw * _calibrate(fr.fake_prob, self.video_calibrator)
+                + conf_aw * (audio_scores[i] if audio_scores else a_cal),
                 0.0, 1.0,
             )))
             for i, fr in enumerate(video_result.frame_results)
@@ -366,12 +445,26 @@ class Fuser:
             "audio_available":         audio_available,
             "effective_video_weight":  eff_video_weight,
             "effective_audio_weight":  eff_audio_weight,
+            "confidence_video_weight": conf_vw,
+            "confidence_audio_weight": conf_aw,
+            "video_confidence":        video_confidence,
+            "audio_confidence":        audio_confidence,
+            "aggregation":             self.aggregation,
+            "percentile":              self.percentile if self.aggregation == "percentile" else None,
+            "uncorroborated_video_evidence": self.uncorroborated_video_evidence,
+            "real_verdict_downgraded": real_verdict_downgraded,
+            "provenance_override":     prov_override,
+            "provenance_score":        prov_score,
+            "provenance_reason":       prov_reason,
             "verdict_timeline":        verdict_timeline,
         }
 
         log.info(
-            "Fusion: video=%.4f audio=%.4f fused=%.4f → %s",
-            v_raw, a_raw, fused, verdict.value,
+            "Fusion: video=%.4f audio=%s fused=%.4f → %s",
+            v_raw,
+            ("None" if a_raw is None else f"{a_raw:.4f}"),
+            fused,
+            verdict.value,
         )
 
         return AnalysisResult(
@@ -427,3 +520,32 @@ def _weighted_average(
 ) -> float:
     """Weighted average of two scores (unnormalised weights accepted)."""
     return video_weight * video_score + audio_weight * audio_score
+
+
+def aggregate_video_scores(
+    frame_scores: list[float],
+    method: str = "mean",
+    percentile: float = 90.0,
+) -> float:
+    """Aggregate per-frame video scores into a single video-level score.
+
+    Parameters
+    ----------
+    frame_scores : list[float]
+        Per-frame fake probabilities.
+    method : str
+        "mean" (default) or "percentile".
+    percentile : float
+        Percentile to use when method="percentile" (default 90).
+
+    Returns
+    -------
+    float 0-1 aggregated score.
+    """
+    if not frame_scores:
+        return 0.5
+
+    scores = np.array(frame_scores, dtype=np.float32)
+    if method == "percentile":
+        return float(np.percentile(scores, percentile))
+    return float(np.mean(scores))

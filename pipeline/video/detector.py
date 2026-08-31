@@ -26,6 +26,12 @@ _REAL_THRESHOLD = 0.4
 _GRADCAM_WEIGHT = 0.6
 _FREQ_WEIGHT    = 0.4
 
+# Minimum average texture score for the visual heuristics to be treated as
+# "actively suspicious" rather than uninformative — used by (a) the
+# backwards-classifier flip and (b) the uncorroborated-video-evidence flag
+# that stops Fuser from issuing a confident REAL verdict off capped evidence.
+_STRONG_TEXTURE = 0.5
+
 # Image extensions recognised by VideoDetector.run()
 _FRAME_EXTS = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
 
@@ -365,21 +371,43 @@ class VideoDetector:
       run(frames_dir, cfg)  — Path to directory of frame images (used by main.py)
     """
 
-    def __init__(self, cfg=None, model=None, ai_classifier=None, face_cropper=None):
-        # cfg is accepted for main.py compatibility but not used in stub mode
+    def __init__(self, cfg=None, model=None, ai_classifier=None, face_cropper=None, fast_mode=False):
         self._cfg = cfg
-        self._ai_classifier = ai_classifier  # optional AIClassifier instance, shared with ImageDetector
-        # Lazily create a FaceCropper if the caller didn't supply one — mirrors
-        # AIClassifier's own lazy-load-then-stay-inert-on-failure pattern (see
-        # face_crop_before_classifier's docstring on ImageDetector.detect for
-        # why video frames need this before hitting the classifier).
+        self._fast_mode = fast_mode
+        self._ai_classifier = ai_classifier
         if face_cropper is None:
             from pipeline.forensics.face_crop import FaceCropper
-            face_cropper = FaceCropper()
+            fc_kwargs: dict = {}
+            video_cfg = getattr(self._cfg, "video", None)
+            face_conf = getattr(video_cfg, "face_confidence", None)
+            if isinstance(face_conf, (int, float)) and 0 < float(face_conf) <= 1.0:
+                fc_kwargs["min_confidence"] = float(face_conf)
+            face_cropper = FaceCropper(**fc_kwargs)
         self._face_cropper = face_cropper
         self._image_detector = ImageDetector(
             model=model, ai_classifier=ai_classifier, face_cropper=face_cropper,
         )
+
+        # ---- GenConViT (Phase 2A): a real pretrained video deepfake detector.
+        # Creates the wrapper LAZILY (weights load on first use) from config.
+        # Stored alongside everything else; its score stays completely separate
+        # from `fake_prob` / `texture_score` until `use_in_final_fusion` is set.
+        self._genconvit = None
+        gc = getattr(self._cfg, "genconvit", None)
+        if gc is not None and getattr(gc, "enabled", False):
+            from pipeline.genconvit.detector import GenConViTDetector
+            import os
+
+            wdir = getattr(gc, "weights_dir", "models/genconvit")
+            if not os.path.isabs(wdir):
+                wdir = str(Path(__file__).resolve().parent.parent.parent / wdir)
+            self._genconvit = GenConViTDetector(
+                weights_dir=wdir,
+                num_frames=getattr(gc, "num_frames", 15) or 15,
+                use_vae=bool(getattr(gc, "use_vae", True)),
+                fp16=bool(getattr(gc, "fp16", True)),
+                face_cropper=self._face_cropper,
+            )
 
     # ── Called by main.py ────────────────────────────────────────────────────
 
@@ -443,12 +471,25 @@ class VideoDetector:
 
         frame_results: list[FrameResult] = []
         documents_skipped = 0
+        all_landmarks: list[Any] = []
+        # Per-frame weight the classifier held in that frame's fusion (from
+        # ImageDetector.metadata["classifier_weight"]). Needed so the
+        # backwards-classifier flip below can reconstruct corrected fused
+        # scores with the SAME weights the original fusion used, instead of
+        # guessing hardcoded shares.
+        frame_classifier_weights: list[Optional[float]] = []
 
         for idx, frame in enumerate(frames):
             img_result = self._image_detector.detect(
                 frame, image_id=f"frame_{idx:06d}",
                 include_metadata=False, include_noise=False, include_ela=False,
                 include_spectral=False, face_crop_before_classifier=True,
+            )
+
+            landmarks = img_result.metadata.get("face_landmarks")
+            all_landmarks.append(landmarks)
+            frame_classifier_weights.append(
+                img_result.metadata.get("classifier_weight")
             )
 
             frame_results.append(FrameResult(
@@ -466,7 +507,114 @@ class VideoDetector:
             if img_result.metadata.get("is_document", False):
                 documents_skipped += 1
 
-        overall = float(np.mean([fr.fake_prob for fr in frame_results])) if frame_results else 0.0
+        # --- Backwards-classifier correction (session 5 finding) ---
+        # The trained classifier sometimes reads BACKWARDS on AI content
+        # (AI video → low score, real video → high score). Detect the
+        # pattern: if the average classifier score is very low (< 0.35)
+        # while the average texture score is strong (>= _STRONG_TEXTURE) AND
+        # the classifier was active on most frames, that's the backwards-
+        # reading signature. Flip every classifier score in that case and
+        # recompute per-frame fake_prob.
+        #
+        # FALSE-NEGATIVE FIX (AI videos flagged REAL): this correction used
+        # to be silently nullified at the video level. Two defects:
+        #   1. It re-fused each frame with hardcoded 0.55*texture +
+        #      0.45*classifier weights — but video frames actually fuse at
+        #      0.15*texture / 0.85*classifier (ImageDetector gives the
+        #      classifier the entire non-texture budget when the other four
+        #      heuristics are excluded), so the recomputed frame scores
+        #      never matched what the fusion would really produce.
+        #   2. It updated fr.fake_prob but NOT fr.pre_ceiling_score — and
+        #     because a flip guarantees flipped avg_classifier > 0.65 >=
+        #     fake_threshold, the aggregate corroboration gate below always
+        #     took its "trust texture" recovery path and overwrote `overall`
+        #     with a mean of the STALE pre-flip pre_ceiling values. Net
+        #     effect: a confidently-backwards AI video (texture 0.90,
+        #     classifier 0.27) still scored 0.36 at video level and fused to
+        #     ~0.28 REAL. Both fixed: corrected scores are reconstructed by
+        #     shifting each frame's own pre-ceiling score by the classifier's
+        #     weighted contribution change under its ACTUAL fusion weight,
+        #     and pre_ceiling_score is updated alongside fake_prob.
+        # The texture bar was also lowered from 0.60 to _STRONG_TEXTURE
+        # (0.50): the measured backwards-AI reference clip averaged texture
+        # 0.53 and was missed by the old bar.
+        classifier_vals = [fr.sub_scores.get("classifier") for fr in frame_results
+                           if fr.sub_scores.get("classifier") is not None]
+        texture_vals = [fr.sub_scores.get("texture") for fr in frame_results
+                        if fr.sub_scores.get("texture") is not None]
+        avg_classifier = float(np.mean(classifier_vals)) if classifier_vals else None
+        avg_texture = float(np.mean(texture_vals)) if texture_vals else None
+        classifier_flipped = False
+        classifier_active_fraction = (
+            len(classifier_vals) / len(frame_results) if frame_results else 0.0
+        )
+        if (
+            avg_classifier is not None
+            and avg_texture is not None
+            and avg_classifier < 0.35
+            and avg_texture > _STRONG_TEXTURE
+            and classifier_active_fraction > 0.5
+        ):
+            classifier_flipped = True
+            for idx, fr in enumerate(frame_results):
+                if "classifier" in fr.sub_scores:
+                    old_clf = fr.sub_scores["classifier"]
+                    new_clf = 1.0 - old_clf
+                    fr.sub_scores["classifier"] = new_clf
+                    w_clf = frame_classifier_weights[idx]
+                    if w_clf is None:
+                        w_clf = self._image_detector._CLASSIFIER_WEIGHT
+                    base = (
+                        fr.pre_ceiling_score
+                        if fr.pre_ceiling_score is not None
+                        else fr.fake_prob
+                    )
+                    corrected = float(np.clip(
+                        base + w_clf * (new_clf - old_clf), 0.0, 1.0
+                    ))
+                    fr.fake_prob = corrected
+                    # Keep pre_ceiling in sync — the aggregate gate below
+                    # recovers video-wide scores FROM these values, so a
+                    # stale one would reinstate the backwards reading.
+                    fr.pre_ceiling_score = corrected
+
+        from pipeline.video.temporal_analysis import analyse_temporal_consistency
+        from pipeline.fusion.fuser import aggregate_video_scores
+
+        frame_scores = [fr.fake_prob for fr in frame_results]
+
+        # Aggregation method/percentile come from config (fusion.aggregation,
+        # fusion.percentile) — previously declared in config.yaml but
+        # silently ignored here (hardcoded "mean"), so the configured
+        # percentile setting never had any effect.
+        _fusion_cfg = getattr(self._cfg, "fusion", None)
+        agg_method = getattr(_fusion_cfg, "aggregation", "mean") or "mean"
+        agg_percentile = float(getattr(_fusion_cfg, "percentile", 90.0) or 90.0)
+
+        if frame_results and not self._fast_mode:
+            temporal_out = analyse_temporal_consistency(
+                frame_scores=frame_scores,
+                timestamps=[fr.timestamp_sec for fr in frame_results],
+                face_landmarks=all_landmarks,
+            )
+            base_score = aggregate_video_scores(
+                frame_scores,
+                method=agg_method if agg_method in ("mean", "percentile") else "mean",
+                percentile=agg_percentile,
+            )
+            temporal_score = temporal_out.get("score", 0.3)
+            overall = 0.7 * base_score + 0.3 * temporal_score
+            overall = float(np.clip(overall, 0.0, 1.0))
+        elif frame_results:
+            overall = aggregate_video_scores(
+                frame_scores,
+                method=agg_method if agg_method in ("mean", "percentile") else "mean",
+                percentile=agg_percentile,
+            )
+            temporal_out = {"score": 0.3, "findings": [], "sub_scores": {}}
+        else:
+            overall = 0.0
+            temporal_out = {"score": 0.3, "findings": [], "sub_scores": {}}
 
         # --- Video-level corroboration gate (aggregate) ---
         # ImageDetector.detect() already applies a PER-FRAME version of this
@@ -485,6 +633,21 @@ class VideoDetector:
         # Re-apply the same rule here using the same averaged numbers shown
         # in the UI, so the final video-level verdict can't drift out of
         # sync with what the person is actually shown.
+        #
+        # FALSE-NEGATIVE FIX (AI videos flagged REAL): when the ceiling
+        # DOES engage (or would have), that fact is now recorded as
+        # `uncorroborated_video_evidence` in metadata. The corroboration
+        # ceiling exists to stop unconfirmed texture evidence producing a
+        # confident FAKE — it was never meant to certify the OPPOSITE. But
+        # a capped video score (~0.59 max) diluted by temporal analysis and
+        # then averaged 60/40 with a weak audio heuristic routinely fell
+        # below the REAL threshold, so AI videos with no provenance tag and
+        # a non-corroborating classifier came out confidently "REAL". When
+        # the visual heuristics were actually strong (avg texture >=
+        # _STRONG_TEXTURE) but no classifier corroboration exists, Fuser
+        # now refuses to issue a confident REAL verdict (see fuser.py) —
+        # the honest output for that evidence state is UNCERTAIN.
+        uncorroborated_video_evidence = False
         if frame_results:
             texture_vals = [fr.sub_scores.get("texture") for fr in frame_results
                              if fr.sub_scores.get("texture") is not None]
@@ -520,8 +683,17 @@ class VideoDetector:
                         for fr in frame_results
                     ]
                     overall = float(np.mean(pre_ceiling_vals))
-                elif overall > _uncorroborated_ceiling:
-                    overall = _uncorroborated_ceiling
+                else:
+                    if overall > _uncorroborated_ceiling:
+                        overall = _uncorroborated_ceiling
+                    # Strong visual suspicion that no trained model could
+                    # confirm — flag it so fusion can't convert this into a
+                    # confident REAL either. (After a backwards-classifier
+                    # flip, avg_classifier >= 0.65 always corroborates, so
+                    # this branch only sees genuinely-unconfirmed cases.)
+                    uncorroborated_video_evidence = bool(
+                        avg_texture is not None and avg_texture > _STRONG_TEXTURE
+                    )
 
         # --- Two-segment reporting (session 6, user-requested) ---
         # Split frames into a "face segment" (a face was detected/cropped)
@@ -585,21 +757,129 @@ class VideoDetector:
             [fr.timestamp_sec for fr in frame_results],
         )
 
+        # ---- GenConViT (Phase 2A) ----
+        # Run the real pretrained video deepfake detector on the SAME frames the
+        # texture heuristic used (existing frame-extraction path). Its output is
+        # stored SEPARATELY in metadata (genconvit_score etc.) and does NOT touch
+        # `overall`/`fake_prob` while `use_in_final_fusion=false`. If the weights
+        # can't load, genconvit_status=INACTIVE with the exact reason — never a
+        # silent fallback to texture.
+        genconvit_out = None
+        if self._genconvit is not None:
+            genconvit_out = self._genconvit.infer(frames, timestamps=timestamps)
+
         metadata = {
             "generator_tag": provenance.get("generator_tag"),
             "has_c2pa": provenance.get("has_c2pa", False),
             "provenance_score": provenance.get("score"),
             "provenance_findings": provenance.get("findings", []),
-            "classifier_backend": self._ai_classifier.backend if self._ai_classifier else None,
+            "classifier_backend": (
+                getattr(self._ai_classifier, "backend", None)
+                or ("ensemble" if getattr(self._ai_classifier, "models", None) else None)
+                if self._ai_classifier else None
+            ),
             "classifier_error": (
                 self._ai_classifier.load_error
                 if self._ai_classifier is not None and not self._ai_classifier.available
                 else None
             ),
+            # Face-detector status: which backend loaded ("mtcnn" or the
+            # degraded "opencv_haar" fallback) and, when nothing loaded, why.
+            # Lets the UI distinguish "footage has no faces" from "the face
+            # detector is broken and the trained classifier never ran" --
+            # those look identical without this field and lead to opposite
+            # conclusions.
+            "face_detector_backend": getattr(self._face_cropper, "backend", None),
+            "face_detector_error": (
+                self._face_cropper.load_error
+                if self._face_cropper is not None and not self._face_cropper.available
+                else None
+            ),
             "frames_analysed": len(frame_results),
             "documents_skipped": documents_skipped,
+            "classifier_flipped": classifier_flipped,
+            "uncorroborated_video_evidence": uncorroborated_video_evidence,
             "face_segment": face_segment,
             "non_face_segment": non_face_segment,
+            "temporal_analysis": {
+                "score": temporal_out.get("score"),
+                "findings": temporal_out.get("findings", []),
+                "sub_scores": temporal_out.get("sub_scores", {}),
+            },
+            # GenConViT — real pretrained neural video score, kept OUT of the
+            # production verdict until evaluation (use_in_final_fusion=false).
+            "genconvit_status": (
+                genconvit_out.get("genconvit_status") if genconvit_out else None
+            ),
+            "genconvit_score": (
+                genconvit_out.get("genconvit_score") if genconvit_out else None
+            ),
+            "genconvit_fake_score": (
+                genconvit_out.get("genconvit_fake_score") if genconvit_out else None
+            ),
+            "genconvit_predicted_label": (
+                genconvit_out.get("genconvit_predicted_label") if genconvit_out else None
+            ),
+            "genconvit_aggregation_method": (
+                genconvit_out.get("genconvit_aggregation_method") if genconvit_out else None
+            ),
+            "genconvit_frame_scores": (
+                genconvit_out.get("genconvit_frame_scores") if genconvit_out else None
+            ),
+            "genconvit_frame_indices": (
+                genconvit_out.get("genconvit_frame_indices") if genconvit_out else None
+            ),
+            "genconvit_timestamps": (
+                genconvit_out.get("genconvit_timestamps") if genconvit_out else None
+            ),
+            "genconvit_face_sizes": (
+                genconvit_out.get("genconvit_face_sizes") if genconvit_out else None
+            ),
+            "genconvit_face_confidences": (
+                genconvit_out.get("genconvit_face_confidences") if genconvit_out else None
+            ),
+            "genconvit_frames_requested": (
+                genconvit_out.get("genconvit_frames_requested") if genconvit_out else None
+            ),
+            "genconvit_frames_sampled": (
+                genconvit_out.get("genconvit_frames_sampled") if genconvit_out else None
+            ),
+            "genconvit_face_frames_found": (
+                genconvit_out.get("genconvit_face_frames_found") if genconvit_out else None
+            ),
+            "genconvit_face_coverage": (
+                genconvit_out.get("genconvit_face_coverage") if genconvit_out else None
+            ),
+            "genconvit_average_face_confidence": (
+                genconvit_out.get("genconvit_average_face_confidence") if genconvit_out else None
+            ),
+            "genconvit_min_face_confidence": (
+                genconvit_out.get("genconvit_min_face_confidence") if genconvit_out else None
+            ),
+            "genconvit_max_face_confidence": (
+                genconvit_out.get("genconvit_max_face_confidence") if genconvit_out else None
+            ),
+            "genconvit_face_quality": (
+                genconvit_out.get("genconvit_face_quality") if genconvit_out else None
+            ),
+            "genconvit_coverage_status": (
+                genconvit_out.get("genconvit_coverage_status") if genconvit_out else None
+            ),
+            "genconvit_face_confidences": (
+                genconvit_out.get("genconvit_face_confidences") if genconvit_out else None
+            ),
+            "genconvit_frames_used": (
+                genconvit_out.get("frames_used") if genconvit_out else None
+            ),
+            "genconvit_branches": (
+                genconvit_out.get("branches") if genconvit_out else None
+            ),
+            "genconvit_load_error": (
+                genconvit_out.get("load_error") if genconvit_out else None
+            ),
+            "genconvit_note": (
+                genconvit_out.get("note") if genconvit_out else None
+            ),
         }
 
         return ModalResult(
@@ -839,23 +1119,59 @@ class ImageDetector:
 
         classifier_out = None
         face_crop_out = None
+        classifier_available = (
+            self._ai_classifier is not None and self._ai_classifier.available
+        )
+
+        # Session 7 finding: face-cropping used to be nested inside the
+        # `not doc_out["is_document"]` check below, which silently hid
+        # real faces on any frame the document heuristic flagged --
+        # confirmed directly on a false-negative video where a letterboxed
+        # repost template (black bars + a white-text caption banner) drove
+        # whole-frame colorfulness/edge-density into document_detector's
+        # range on 76% of frames, even though a face was clearly visible
+        # in most of them. Whether a frame *contains a face* has nothing
+        # to do with whether the *whole frame* looks like a scanned
+        # document -- document_detector.py's own docstring says it's meant
+        # to gate only the classifier signal, not face-cropping. Run
+        # face-cropping unconditionally (whenever we'd consider using the
+        # classifier at all) so `face_detected` reflects reality regardless
+        # of the document heuristic.
         if (
-            self._ai_classifier is not None
-            and self._ai_classifier.available
-            and not doc_out["is_document"]
+            classifier_available
+            and face_crop_before_classifier
+            and self._face_cropper is not None
         ):
+            face_crop_out = self._face_cropper.crop(image_rgb)
+
+        if classifier_available:
             classifier_input = image_rgb
             if face_crop_before_classifier and self._face_cropper is not None:
-                face_crop_out = self._face_cropper.crop(image_rgb)
-                if face_crop_out["face_found"]:
+                if face_crop_out is not None and face_crop_out["face_found"]:
+                    # A genuine detected face overrides the document gate:
+                    # a frame with a real face crop is essentially never
+                    # an actual flat document/text-page photo -- that's
+                    # exactly the (narrow) case doc_out exists to protect
+                    # against -- so it's safe, and correct per
+                    # face_crop_before_classifier's own docstring, to feed
+                    # the classifier the face crop regardless of whether
+                    # the whole frame tripped the document heuristic.
                     classifier_input = face_crop_out["crop"]
                 else:
-                    # No face to crop -- this classifier is very likely
+                    # No face found -- this classifier is very likely
                     # face-trained (see face_crop_before_classifier
                     # docstring above), so feeding it a whole non-face
                     # frame is an out-of-domain input, not a meaningful
-                    # reading. Skip rather than guess.
+                    # reading. Skip rather than guess. (This also covers
+                    # the document-look-alike case: no face + flagged as
+                    # a document is exactly the scenario document_detector
+                    # was built to protect against.)
                     classifier_input = None
+            elif doc_out["is_document"]:
+                # No face-cropping in play for this caller (plain
+                # whole-frame ImageDetector usage, e.g. the Image tab) --
+                # keep the original protective behavior unchanged.
+                classifier_input = None
             if classifier_input is not None:
                 classifier_out = self._ai_classifier.predict(classifier_input)
 
@@ -884,15 +1200,42 @@ class ImageDetector:
             base_weights = {k: self._WEIGHTS[k] / total for k in remaining_keys}
 
         if classifier_active:
-            # Trained model present: it takes _CLASSIFIER_WEIGHT of the
-            # total, and the heuristics share the remaining budget in the
-            # same *proportions* they already had to each other (base
-            # weights already sum to 1.0, so scaling all of them by the
-            # same factor preserves that).
-            remaining = 1.0 - self._CLASSIFIER_WEIGHT
-            active_weights = {k: v * remaining for k, v in base_weights.items()}
+            if excluded:
+                # Video (or any caller excluding some of the 5 heuristics):
+                # don't let the SURVIVING heuristics inherit the EXCLUDED
+                # ones' weight via proportional renormalization -- that's
+                # fine when peers of comparable reliability share a gap,
+                # but for video all four of noise/spectral/ela/metadata are
+                # excluded, leaving `texture` (documented above as "the
+                # weakest signal... can be actively misleading") to
+                # silently inherit the ENTIRE non-classifier budget (55%)
+                # just because it happened to be the one left standing --
+                # not because it earned a bigger role. Session 7 finding:
+                # a video with texture=15% (confidently, and wrongly,
+                # "real") and classifier=63% (correctly leaning fake on
+                # the frames it could see) fused to only 36% per frame
+                # under the old 55/45 split -- the weak signal was
+                # outvoting the strong one. Give texture only its true
+                # ORIGINAL (un-renormalized) share of the full 5-signal
+                # budget, and let the classifier -- a real trained model,
+                # not a hand-written heuristic -- absorb whatever the
+                # excluded signals would have held.
+                original_weights = {k: self._WEIGHTS[k] for k in base_weights}
+                surviving_share = sum(original_weights.values())
+                active_weights = original_weights
+                _classifier_weight_effective = 1.0 - surviving_share
+            else:
+                # Trained model present: it takes _CLASSIFIER_WEIGHT of the
+                # total, and the heuristics share the remaining budget in the
+                # same *proportions* they already had to each other (base
+                # weights already sum to 1.0, so scaling all of them by the
+                # same factor preserves that).
+                remaining = 1.0 - self._CLASSIFIER_WEIGHT
+                active_weights = {k: v * remaining for k, v in base_weights.items()}
+                _classifier_weight_effective = self._CLASSIFIER_WEIGHT
         else:
             active_weights = dict(base_weights)
+            _classifier_weight_effective = self._CLASSIFIER_WEIGHT
 
         signals = {
             "texture":  {"score": texture_score, "weight": active_weights["texture"],
@@ -913,7 +1256,7 @@ class ImageDetector:
         if classifier_active:
             signals["classifier"] = {
                 "score": classifier_out["score"],
-                "weight": self._CLASSIFIER_WEIGHT,
+                "weight": _classifier_weight_effective,
                 "findings": classifier_out["findings"],
             }
         elif (
@@ -1045,6 +1388,9 @@ class ImageDetector:
                 "face_detected":   (
                     face_crop_out["face_found"] if face_crop_out is not None else False
                 ),
+                "face_landmarks":   (
+                    face_crop_out.get("landmarks") if face_crop_out is not None else None
+                ),
                 "face_crop_confidence": (
                     face_crop_out.get("confidence") if face_crop_out is not None else None
                 ),
@@ -1062,8 +1408,17 @@ class ImageDetector:
                 "has_exif":        meta_out.get("has_exif") if meta_out else None,
                 "suspicious_fraction": loc_out.get("suspicious_fraction"),
                 "classifier_active": classifier_active,
-                "classifier_weight": self._CLASSIFIER_WEIGHT if classifier_active else None,
+                "classifier_weight": _classifier_weight_effective if classifier_active else None,
                 "classifier_backend": classifier_out.get("backend") if classifier_out else None,
+                # Face-detector status: which backend actually loaded and why
+                # not, so "no face detected" is never mistaken for "detector
+                # broken" (or vice versa) downstream.
+                "face_detector_backend": getattr(self._face_cropper, "backend", None),
+                "face_detector_error": (
+                    self._face_cropper.load_error
+                    if self._face_cropper is not None and not self._face_cropper.available
+                    else None
+                ),
                 "classifier_error": (
                     self._ai_classifier.load_error
                     if self._ai_classifier is not None and not self._ai_classifier.available
