@@ -1,0 +1,1697 @@
+{
+  "generated_at": "2026-08-31T06:19:55.437087+00:00",
+  "source": "reports/testing_videos_evaluation.json",
+  "phase": "3A",
+  "reporting_only_note": "Evidence reliability & domain-risk reporting only. No detector, fusion formulation, threshold, or configuration was modified; genconvit/aasist use_in_final_fusion stay false; the production verdict is unchanged.",
+  "calibration_status": "NOT READY",
+  "production_invariance": {
+    "matches_phase2b_baseline": true,
+    "metric_deltas": {},
+    "baseline": {
+      "TP": 6,
+      "TN": 4,
+      "FP": 0,
+      "FN": 5
+    },
+    "computed": {
+      "confusion": {
+        "TP": 6,
+        "TN": 4,
+        "FP": 0,
+        "FN": 5
+      },
+      "accuracy": 0.6666666666666666,
+      "precision_fake": 1.0,
+      "recall_fake": 0.5454545454545454,
+      "FAKE_RECALL": 0.5454545454545454,
+      "f1_fake": 0.7058823529411764,
+      "false_negative_rate": 0.45454545454545453,
+      "false_positive_rate": 0.0,
+      "fake_verdict_rate": 0.4,
+      "uncertain_rate": 0.26666666666666666
+    },
+    "invariance_note": "Phase 2C performs analysis only; no production detector, fusion, or threshold was modified.",
+    "per_video_verdicts": [
+      {
+        "filename": "ai_noaud2.mp4",
+        "ground_truth": "FAKE",
+        "verdict": "UNCERTAIN",
+        "fusion_score": 0.5509999816417694
+      },
+      {
+        "filename": "ai_vid_without_audio.mp4",
+        "ground_truth": "FAKE",
+        "verdict": "FAKE",
+        "fusion_score": 0.720006259444484
+      },
+      {
+        "filename": "avengers ai vid 1.mp4",
+        "ground_truth": "FAKE",
+        "verdict": "REAL",
+        "fusion_score": 0.20163524183070777
+      },
+      {
+        "filename": "avengers ai vid 2.mp4",
+        "ground_truth": "FAKE",
+        "verdict": "UNCERTAIN",
+        "fusion_score": 0.44298463464114146
+      },
+      {
+        "filename": "crackers_withaud.mp4",
+        "ground_truth": "FAKE",
+        "verdict": "FAKE",
+        "fusion_score": 0.6356548347955974
+      },
+      {
+        "filename": "gemini ai video.mp4",
+        "ground_truth": "FAKE",
+        "verdict": "FAKE",
+        "fusion_score": 0.5994122290981734
+      },
+      {
+        "filename": "girl walkin video.mp4",
+        "ground_truth": "FAKE",
+        "verdict": "FAKE",
+        "fusion_score": 0.5978855321283638
+      },
+      {
+        "filename": "girl_speaking video gemini.mp4",
+        "ground_truth": "FAKE",
+        "verdict": "FAKE",
+        "fusion_score": 0.5936245383719256
+      },
+      {
+        "filename": "insta vid.mp4",
+        "ground_truth": "FAKE",
+        "verdict": "REAL",
+        "fusion_score": 0.3608278066706602
+      },
+      {
+        "filename": "real vid ai aud.mp4",
+        "ground_truth": "FAKE",
+        "verdict": "REAL",
+        "fusion_score": 0.33351302244843506
+      },
+      {
+        "filename": "south indian women speaking.mp4",
+        "ground_truth": "FAKE",
+        "verdict": "FAKE",
+        "fusion_score": 0.6691352605531935
+      },
+      {
+        "filename": "WhatsApp Video 2026-07-24 at 6.15.45 PM.mp4",
+        "ground_truth": "REAL",
+        "verdict": "REAL",
+        "fusion_score": 0.3288806394246594
+      },
+      {
+        "filename": "WhatsApp Video 2026-07-24 at 6.15.46 PM.mp4",
+        "ground_truth": "REAL",
+        "verdict": "REAL",
+        "fusion_score": 0.3120384495889196
+      },
+      {
+        "filename": "real_vid_to_test_withaudio.mp4",
+        "ground_truth": "REAL",
+        "verdict": "UNCERTAIN",
+        "fusion_score": 0.4507240846723394
+      },
+      {
+        "filename": "vid_with_noaudio.mp4",
+        "ground_truth": "REAL",
+        "verdict": "UNCERTAIN",
+        "fusion_score": 0.5509999816417694
+      }
+    ]
+  },
+  "corpus_summary": {
+    "total_videos": 15,
+    "agreement_patterns": {
+      "INSUFFICIENT_DATA": 2,
+      "MIXED_AGREEMENT": 10,
+      "PARTIAL_AGREEMENT": 2,
+      "MULTIMODAL_DISAGREEMENT": 1
+    },
+    "domain_risk_distribution": {
+      "DOMAIN-RISK": 8,
+      "MODERATE": 6,
+      "HIGH": 1
+    }
+  },
+  "per_video_reports": [
+    {
+      "filename": "ai_noaud2.mp4",
+      "ground_truth": "FAKE",
+      "production_verdict": "UNCERTAIN",
+      "production_fusion_score": 0.5509999816417694,
+      "domain_risk": {
+        "state": "DOMAIN-RISK",
+        "flags": [
+          {
+            "flag": "MISSING_AUDIO",
+            "severity": "HIGH",
+            "observed_value": false,
+            "reason": "No audio stream in container; audio authenticity could not be assessed by any detector.",
+            "evidence_source": "container_metadata"
+          },
+          {
+            "flag": "MISSING_FACE",
+            "severity": "HIGH",
+            "observed_value": false,
+            "reason": "No usable face frames detected; face-dependent neural detectors (GenConViT) cannot produce a visual authenticity reading.",
+            "evidence_source": "face_detector"
+          }
+        ]
+      },
+      "modalities": {
+        "genconvit": {
+          "available": false,
+          "evidence_direction": {
+            "modality": "genconvit",
+            "evidence_direction": "NO_EVIDENCE",
+            "evidence_strength": "N/A",
+            "reliability_state": "UNAVAILABLE",
+            "detail": "genconvit did not produce evidence (unavailable or no output)."
+          },
+          "score": null,
+          "coverage": {
+            "status": "NO_FACE",
+            "face_coverage": 0.0,
+            "frames_used": 0,
+            "frames_requested": 10,
+            "reliability_note": "GenConViT could not detect any usable face frames; its visual deepfake detector produced no evidence."
+          },
+          "reliability": "UNAVAILABLE"
+        },
+        "aasist": {
+          "available": false,
+          "evidence_direction": {
+            "modality": "aasist",
+            "evidence_direction": "NO_EVIDENCE",
+            "evidence_strength": "N/A",
+            "reliability_state": "UNAVAILABLE",
+            "detail": "aasist did not produce evidence (unavailable or no output)."
+          },
+          "score": null,
+          "segment_pattern": {
+            "mean_spoof": null,
+            "min_spoof": null,
+            "max_spoof": null,
+            "window_count": 0,
+            "segment_pattern": "no_windows",
+            "high_spoof_window_count": 0,
+            "low_spoof_window_count": 0,
+            "high_spoof_fraction": null,
+            "timestamps": [],
+            "detail": "No AASIST window scores available."
+          },
+          "reliability": "UNAVAILABLE"
+        }
+      },
+      "agreement": {
+        "comparisons": {},
+        "neural_agreement": "INSUFFICIENT_MODALITIES",
+        "neural_vs_heuristic_disagreement": false,
+        "agree_count": 0,
+        "disagree_count": 0,
+        "summary": "INSUFFICIENT_DATA"
+      },
+      "evidence_summary": [
+        "Audio: unavailable (no audio track)",
+        "Face: unavailable (no detectable faces)",
+        "Domain-risk flags: MISSING_AUDIO, MISSING_FACE"
+      ],
+      "explanations": [
+        "No usable audio was available; audio authenticity could not be assessed.",
+        "No usable face frames were detected; face-dependent neural detectors could not produce visual authenticity evidence.",
+        "No audio stream was available for analysis.",
+        "No face was detected in any sampled frame.",
+        "The overall evidence reliability is limited by domain-risk factors; detector readings should be treated with caution."
+      ],
+      "overall_reliability": "DOMAIN-RISK"
+    },
+    {
+      "filename": "ai_vid_without_audio.mp4",
+      "ground_truth": "FAKE",
+      "production_verdict": "FAKE",
+      "production_fusion_score": 0.720006259444484,
+      "domain_risk": {
+        "state": "MODERATE",
+        "flags": [
+          {
+            "flag": "LOW_FACE_COVERAGE",
+            "severity": "MEDIUM",
+            "observed_value": 0.1,
+            "reason": "Face coverage is 10.0% of sampled frames; GenConViT's visual reading is based on limited data.",
+            "evidence_source": "face_detector"
+          }
+        ]
+      },
+      "modalities": {
+        "genconvit": {
+          "available": true,
+          "evidence_direction": {
+            "modality": "genconvit",
+            "evidence_direction": "REAL_EVIDENCE",
+            "evidence_strength": "LOW",
+            "reliability_state": "LOW",
+            "score": 0.6090337336063385
+          },
+          "score": 0.6090337336063385,
+          "coverage": {
+            "status": "LOW",
+            "face_coverage": 0.1,
+            "frames_used": 1,
+            "frames_requested": 10,
+            "reliability_note": "GenConViT had limited visual coverage; its output should be interpreted cautiously."
+          },
+          "reliability": "LOW"
+        },
+        "aasist": {
+          "available": true,
+          "evidence_direction": {
+            "modality": "aasist",
+            "evidence_direction": "REAL_EVIDENCE",
+            "evidence_strength": "HIGH",
+            "reliability_state": "MODERATE",
+            "score": 0.010285
+          },
+          "score": 0.010285,
+          "segment_pattern": {
+            "mean_spoof": 0.010285,
+            "min_spoof": 0.007825,
+            "max_spoof": 0.011516,
+            "window_count": 3,
+            "segment_pattern": "persistent_low_spoof",
+            "high_spoof_window_count": 0,
+            "low_spoof_window_count": 3,
+            "high_spoof_fraction": 0.0,
+            "timestamps": [
+              0.0,
+              4.037,
+              8.075
+            ],
+            "detail": "AASIST produced BONAFIDE-oriented audio evidence across 3 analyzed windows (mean spoof score: 0.0103, range: 0.0078\u20130.0115). Segment pattern: persistent_low_spoof. 0/3 windows scored >= 0.8 (high spoof), 3/3 scored < 0.2 (low spoof)."
+          },
+          "reliability": "MODERATE"
+        }
+      },
+      "agreement": {
+        "comparisons": {
+          "genconvit_vs_aasist": "AGREE",
+          "aasist_vs_audio_heuristic": "NEITHER",
+          "provenance_vs_genconvit": "DISAGREE"
+        },
+        "neural_agreement": "NEURAL_AGREEMENT",
+        "neural_vs_heuristic_disagreement": false,
+        "agree_count": 1,
+        "disagree_count": 1,
+        "summary": "MIXED_AGREEMENT"
+      },
+      "evidence_summary": [
+        "GenConViT: REAL (score=0.6090337336063385, coverage=LOW)",
+        "AASIST: BONAFIDE (spoof=0.010285, pattern=persistent_low_spoof, n=3)",
+        "Domain-risk flags: LOW_FACE_COVERAGE"
+      ],
+      "explanations": [
+        "AASIST read the audio as authentic (bonafide; mean spoof score: 0.0103). This is an audio-level statement only; it does NOT imply the video is real.",
+        "GenConViT had limited visual coverage (LOW); its output should be interpreted cautiously."
+      ],
+      "overall_reliability": "MODERATE"
+    },
+    {
+      "filename": "avengers ai vid 1.mp4",
+      "ground_truth": "FAKE",
+      "production_verdict": "REAL",
+      "production_fusion_score": 0.20163524183070777,
+      "domain_risk": {
+        "state": "DOMAIN-RISK",
+        "flags": [
+          {
+            "flag": "LOW_BITRATE",
+            "severity": "HIGH",
+            "observed_value": 700.0,
+            "reason": "Input bitrate (700 kbps) is within the previously observed low-bitrate risk regime (threshold: 1200 kbps).",
+            "evidence_source": "ffprobe"
+          },
+          {
+            "flag": "NEURAL_AUDIO_HEURISTIC_DISAGREEMENT",
+            "severity": "MEDIUM",
+            "observed_value": {
+              "aasist_label": "SPOOF",
+              "heuristic_mean": 0.13010689625233704
+            },
+            "reason": "AASIST reads SPOOF but the production audio heuristic reads natural (mean {:.2f}). The two audio detectors disagree; this pattern is consistent with either genuine synthetic audio or codec/telephony artefacts \u2014 further investigation needed.",
+            "evidence_source": "cross_detector"
+          },
+          {
+            "flag": "NEURAL_MODALITY_DISAGREEMENT",
+            "severity": "MEDIUM",
+            "observed_value": {
+              "genconvit": "REAL",
+              "aasist": "SPOOF"
+            },
+            "reason": "GenConViT reads REAL while AASIST reads SPOOF; the two neural detectors disagree on the direction of manipulation evidence.",
+            "evidence_source": "cross_detector"
+          }
+        ]
+      },
+      "modalities": {
+        "genconvit": {
+          "available": true,
+          "evidence_direction": {
+            "modality": "genconvit",
+            "evidence_direction": "REAL_EVIDENCE",
+            "evidence_strength": "LOW",
+            "reliability_state": "DOMAIN-RISK",
+            "score": 0.5442918837070465
+          },
+          "score": 0.5442918837070465,
+          "coverage": {
+            "status": "GOOD",
+            "face_coverage": 0.7608695652173914,
+            "frames_used": 35,
+            "frames_requested": 46,
+            "reliability_note": "GenConViT had adequate visual coverage; its output can be interpreted with moderate confidence."
+          },
+          "reliability": "DOMAIN-RISK"
+        },
+        "aasist": {
+          "available": true,
+          "evidence_direction": {
+            "modality": "aasist",
+            "evidence_direction": "FAKE_EVIDENCE",
+            "evidence_strength": "HIGH",
+            "reliability_state": "DOMAIN-RISK",
+            "score": 0.989161
+          },
+          "score": 0.989161,
+          "segment_pattern": {
+            "mean_spoof": 0.989161,
+            "min_spoof": 0.955521,
+            "max_spoof": 0.999972,
+            "window_count": 12,
+            "segment_pattern": "persistent_high_spoof",
+            "high_spoof_window_count": 12,
+            "low_spoof_window_count": 0,
+            "high_spoof_fraction": 1.0,
+            "timestamps": [
+              0.0,
+              4.037,
+              8.075,
+              12.112,
+              16.15,
+              20.188,
+              24.225,
+              28.262,
+              32.3,
+              36.337,
+              40.375,
+              44.412
+            ],
+            "detail": "AASIST produced SPOOF-oriented audio evidence across 12 analyzed windows (mean spoof score: 0.9892, range: 0.9555\u20131.0000). Segment pattern: persistent_high_spoof. 12/12 windows scored >= 0.8 (high spoof), 0/12 scored < 0.2 (low spoof). This is audio-level evidence; persistent spoof detection does NOT by itself establish video-level manipulation."
+          },
+          "reliability": "DOMAIN-RISK"
+        }
+      },
+      "agreement": {
+        "comparisons": {
+          "genconvit_vs_aasist": "DISAGREE",
+          "aasist_vs_audio_heuristic": "DISAGREE",
+          "genconvit_vs_texture": "AGREE"
+        },
+        "neural_agreement": "NEURAL_DISAGREEMENT",
+        "neural_vs_heuristic_disagreement": true,
+        "agree_count": 1,
+        "disagree_count": 2,
+        "summary": "MIXED_AGREEMENT"
+      },
+      "evidence_summary": [
+        "GenConViT: REAL (score=0.5442918837070465, coverage=GOOD)",
+        "AASIST: SPOOF (spoof=0.989161, pattern=persistent_high_spoof, n=12)",
+        "Domain-risk flags: LOW_BITRATE, NEURAL_AUDIO_HEURISTIC_DISAGREEMENT, NEURAL_MODALITY_DISAGREEMENT"
+      ],
+      "explanations": [
+        "AASIST produced persistent spoof-oriented audio evidence across all 12 analyzed windows (mean 0.9892). This is audio-level evidence only; it does NOT by itself establish video-level manipulation.",
+        "GenConViT produced a REAL reading with adequate visual coverage.",
+        "AASIST and the existing audio heuristic disagree on the authenticity of the audio track.",
+        "The two neural detectors (GenConViT and AASIST) read the manipulation evidence in different directions.",
+        "Input exhibits a domain-risk indicator associated with low-bitrate media; detector readings may be less reliable under these conditions.",
+        "AASIST and the audio heuristic disagree; this pattern is consistent with either synthetic audio or codec artefacts.",
+        "The two neural detectors disagree on the manipulation evidence direction.",
+        "The overall evidence reliability is limited by domain-risk factors; detector readings should be treated with caution."
+      ],
+      "overall_reliability": "DOMAIN-RISK"
+    },
+    {
+      "filename": "avengers ai vid 2.mp4",
+      "ground_truth": "FAKE",
+      "production_verdict": "UNCERTAIN",
+      "production_fusion_score": 0.44298463464114146,
+      "domain_risk": {
+        "state": "DOMAIN-RISK",
+        "flags": [
+          {
+            "flag": "LOW_BITRATE",
+            "severity": "HIGH",
+            "observed_value": 651.3,
+            "reason": "Input bitrate (651 kbps) is within the previously observed low-bitrate risk regime (threshold: 1200 kbps).",
+            "evidence_source": "ffprobe"
+          },
+          {
+            "flag": "NEURAL_AUDIO_HEURISTIC_DISAGREEMENT",
+            "severity": "MEDIUM",
+            "observed_value": {
+              "aasist_label": "SPOOF",
+              "heuristic_mean": 0.2809616141401995
+            },
+            "reason": "AASIST reads SPOOF but the production audio heuristic reads natural (mean {:.2f}). The two audio detectors disagree; this pattern is consistent with either genuine synthetic audio or codec/telephony artefacts \u2014 further investigation needed.",
+            "evidence_source": "cross_detector"
+          }
+        ]
+      },
+      "modalities": {
+        "genconvit": {
+          "available": true,
+          "evidence_direction": {
+            "modality": "genconvit",
+            "evidence_direction": "FAKE_EVIDENCE",
+            "evidence_strength": "LOW",
+            "reliability_state": "DOMAIN-RISK",
+            "score": 0.48416048288345337
+          },
+          "score": 0.48416048288345337,
+          "coverage": {
+            "status": "GOOD",
+            "face_coverage": 0.9473684210526315,
+            "frames_used": 36,
+            "frames_requested": 38,
+            "reliability_note": "GenConViT had adequate visual coverage; its output can be interpreted with moderate confidence."
+          },
+          "reliability": "DOMAIN-RISK"
+        },
+        "aasist": {
+          "available": true,
+          "evidence_direction": {
+            "modality": "aasist",
+            "evidence_direction": "FAKE_EVIDENCE",
+            "evidence_strength": "HIGH",
+            "reliability_state": "DOMAIN-RISK",
+            "score": 0.997868
+          },
+          "score": 0.997868,
+          "segment_pattern": {
+            "mean_spoof": 0.997868,
+            "min_spoof": 0.993928,
+            "max_spoof": 0.999848,
+            "window_count": 10,
+            "segment_pattern": "persistent_high_spoof",
+            "high_spoof_window_count": 10,
+            "low_spoof_window_count": 0,
+            "high_spoof_fraction": 1.0,
+            "timestamps": [
+              0.0,
+              4.037,
+              8.075,
+              12.112,
+              16.15,
+              20.188,
+              24.225,
+              28.262,
+              32.3,
+              36.337
+            ],
+            "detail": "AASIST produced SPOOF-oriented audio evidence across 10 analyzed windows (mean spoof score: 0.9979, range: 0.9939\u20130.9998). Segment pattern: persistent_high_spoof. 10/10 windows scored >= 0.8 (high spoof), 0/10 scored < 0.2 (low spoof). This is audio-level evidence; persistent spoof detection does NOT by itself establish video-level manipulation."
+          },
+          "reliability": "DOMAIN-RISK"
+        }
+      },
+      "agreement": {
+        "comparisons": {
+          "genconvit_vs_aasist": "AGREE",
+          "aasist_vs_audio_heuristic": "DISAGREE",
+          "genconvit_vs_texture": "AGREE"
+        },
+        "neural_agreement": "NEURAL_AGREEMENT",
+        "neural_vs_heuristic_disagreement": true,
+        "agree_count": 2,
+        "disagree_count": 1,
+        "summary": "MIXED_AGREEMENT"
+      },
+      "evidence_summary": [
+        "GenConViT: FAKE (score=0.48416048288345337, coverage=GOOD)",
+        "AASIST: SPOOF (spoof=0.997868, pattern=persistent_high_spoof, n=10)",
+        "Domain-risk flags: LOW_BITRATE, NEURAL_AUDIO_HEURISTIC_DISAGREEMENT"
+      ],
+      "explanations": [
+        "AASIST produced persistent spoof-oriented audio evidence across all 10 analyzed windows (mean 0.9979). This is audio-level evidence only; it does NOT by itself establish video-level manipulation.",
+        "GenConViT produced a FAKE reading with adequate visual coverage.",
+        "AASIST and the existing audio heuristic disagree on the authenticity of the audio track.",
+        "Input exhibits a domain-risk indicator associated with low-bitrate media; detector readings may be less reliable under these conditions.",
+        "AASIST and the audio heuristic disagree; this pattern is consistent with either synthetic audio or codec artefacts.",
+        "The overall evidence reliability is limited by domain-risk factors; detector readings should be treated with caution."
+      ],
+      "overall_reliability": "DOMAIN-RISK"
+    },
+    {
+      "filename": "crackers_withaud.mp4",
+      "ground_truth": "FAKE",
+      "production_verdict": "FAKE",
+      "production_fusion_score": 0.6356548347955974,
+      "domain_risk": {
+        "state": "MODERATE",
+        "flags": [
+          {
+            "flag": "LOW_FACE_COVERAGE",
+            "severity": "MEDIUM",
+            "observed_value": 0.1,
+            "reason": "Face coverage is 10.0% of sampled frames; GenConViT's visual reading is based on limited data.",
+            "evidence_source": "face_detector"
+          },
+          {
+            "flag": "NEURAL_AUDIO_HEURISTIC_DISAGREEMENT",
+            "severity": "MEDIUM",
+            "observed_value": {
+              "aasist_label": "SPOOF",
+              "heuristic_mean": 0.23913708698899327
+            },
+            "reason": "AASIST reads SPOOF but the production audio heuristic reads natural (mean {:.2f}). The two audio detectors disagree; this pattern is consistent with either genuine synthetic audio or codec/telephony artefacts \u2014 further investigation needed.",
+            "evidence_source": "cross_detector"
+          }
+        ]
+      },
+      "modalities": {
+        "genconvit": {
+          "available": true,
+          "evidence_direction": {
+            "modality": "genconvit",
+            "evidence_direction": "FAKE_EVIDENCE",
+            "evidence_strength": "MODERATE",
+            "reliability_state": "LOW",
+            "score": 0.3243744969367981
+          },
+          "score": 0.3243744969367981,
+          "coverage": {
+            "status": "LOW",
+            "face_coverage": 0.1,
+            "frames_used": 1,
+            "frames_requested": 10,
+            "reliability_note": "GenConViT had limited visual coverage; its output should be interpreted cautiously."
+          },
+          "reliability": "LOW"
+        },
+        "aasist": {
+          "available": true,
+          "evidence_direction": {
+            "modality": "aasist",
+            "evidence_direction": "FAKE_EVIDENCE",
+            "evidence_strength": "MODERATE",
+            "reliability_state": "MODERATE",
+            "score": 0.743787
+          },
+          "score": 0.743787,
+          "segment_pattern": {
+            "mean_spoof": 0.743787,
+            "min_spoof": 0.231535,
+            "max_spoof": 0.999987,
+            "window_count": 3,
+            "segment_pattern": "mixed_or_localized",
+            "high_spoof_window_count": 2,
+            "low_spoof_window_count": 0,
+            "high_spoof_fraction": 0.6667,
+            "timestamps": [
+              0.0,
+              4.037,
+              8.075
+            ],
+            "detail": "AASIST produced SPOOF-oriented audio evidence across 3 analyzed windows (mean spoof score: 0.7438, range: 0.2315\u20131.0000). Segment pattern: mixed_or_localized. 2/3 windows scored >= 0.8 (high spoof), 0/3 scored < 0.2 (low spoof)."
+          },
+          "reliability": "MODERATE"
+        }
+      },
+      "agreement": {
+        "comparisons": {
+          "genconvit_vs_aasist": "AGREE",
+          "aasist_vs_audio_heuristic": "DISAGREE",
+          "provenance_vs_genconvit": "AGREE"
+        },
+        "neural_agreement": "NEURAL_AGREEMENT",
+        "neural_vs_heuristic_disagreement": true,
+        "agree_count": 2,
+        "disagree_count": 1,
+        "summary": "MIXED_AGREEMENT"
+      },
+      "evidence_summary": [
+        "GenConViT: FAKE (score=0.3243744969367981, coverage=LOW)",
+        "AASIST: SPOOF (spoof=0.743787, pattern=mixed_or_localized, n=3)",
+        "Domain-risk flags: LOW_FACE_COVERAGE, NEURAL_AUDIO_HEURISTIC_DISAGREEMENT"
+      ],
+      "explanations": [
+        "AASIST detected spoof-oriented audio evidence (pattern: mixed_or_localized, 3 windows, mean 0.7438). The evidence is localized and should be interpreted in context.",
+        "GenConViT had limited visual coverage (LOW); its output should be interpreted cautiously.",
+        "AASIST and the existing audio heuristic disagree on the authenticity of the audio track.",
+        "AASIST and the audio heuristic disagree; this pattern is consistent with either synthetic audio or codec artefacts."
+      ],
+      "overall_reliability": "MODERATE"
+    },
+    {
+      "filename": "gemini ai video.mp4",
+      "ground_truth": "FAKE",
+      "production_verdict": "FAKE",
+      "production_fusion_score": 0.5994122290981734,
+      "domain_risk": {
+        "state": "DOMAIN-RISK",
+        "flags": [
+          {
+            "flag": "MISSING_FACE",
+            "severity": "HIGH",
+            "observed_value": false,
+            "reason": "No usable face frames detected; face-dependent neural detectors (GenConViT) cannot produce a visual authenticity reading.",
+            "evidence_source": "face_detector"
+          }
+        ]
+      },
+      "modalities": {
+        "genconvit": {
+          "available": false,
+          "evidence_direction": {
+            "modality": "genconvit",
+            "evidence_direction": "NO_EVIDENCE",
+            "evidence_strength": "N/A",
+            "reliability_state": "UNAVAILABLE",
+            "detail": "genconvit did not produce evidence (unavailable or no output)."
+          },
+          "score": null,
+          "coverage": {
+            "status": "NO_FACE",
+            "face_coverage": 0.0,
+            "frames_used": 0,
+            "frames_requested": 10,
+            "reliability_note": "GenConViT could not detect any usable face frames; its visual deepfake detector produced no evidence."
+          },
+          "reliability": "UNAVAILABLE"
+        },
+        "aasist": {
+          "available": true,
+          "evidence_direction": {
+            "modality": "aasist",
+            "evidence_direction": "REAL_EVIDENCE",
+            "evidence_strength": "LOW",
+            "reliability_state": "DOMAIN-RISK",
+            "score": 0.470489
+          },
+          "score": 0.470489,
+          "segment_pattern": {
+            "mean_spoof": 0.470489,
+            "min_spoof": 0.01114,
+            "max_spoof": 0.99472,
+            "window_count": 3,
+            "segment_pattern": "mixed_or_localized",
+            "high_spoof_window_count": 1,
+            "low_spoof_window_count": 1,
+            "high_spoof_fraction": 0.3333,
+            "timestamps": [
+              0.0,
+              4.037,
+              8.075
+            ],
+            "detail": "AASIST produced BONAFIDE-oriented audio evidence across 3 analyzed windows (mean spoof score: 0.4705, range: 0.0111\u20130.9947). Segment pattern: mixed_or_localized. 1/3 windows scored >= 0.8 (high spoof), 1/3 scored < 0.2 (low spoof)."
+          },
+          "reliability": "DOMAIN-RISK"
+        }
+      },
+      "agreement": {
+        "comparisons": {
+          "aasist_vs_audio_heuristic": "AGREE"
+        },
+        "neural_agreement": "INSUFFICIENT_MODALITIES",
+        "neural_vs_heuristic_disagreement": false,
+        "agree_count": 1,
+        "disagree_count": 0,
+        "summary": "PARTIAL_AGREEMENT"
+      },
+      "evidence_summary": [
+        "AASIST: BONAFIDE (spoof=0.470489, pattern=mixed_or_localized, n=3)",
+        "Face: unavailable (no detectable faces)",
+        "Domain-risk flags: MISSING_FACE"
+      ],
+      "explanations": [
+        "AASIST read the audio as authentic (bonafide; mean spoof score: 0.4705). This is an audio-level statement only; it does NOT imply the video is real.",
+        "No usable face frames were detected; face-dependent neural detectors could not produce visual authenticity evidence.",
+        "No face was detected in any sampled frame.",
+        "The overall evidence reliability is limited by domain-risk factors; detector readings should be treated with caution."
+      ],
+      "overall_reliability": "DOMAIN-RISK"
+    },
+    {
+      "filename": "girl walkin video.mp4",
+      "ground_truth": "FAKE",
+      "production_verdict": "FAKE",
+      "production_fusion_score": 0.5978855321283638,
+      "domain_risk": {
+        "state": "MODERATE",
+        "flags": [
+          {
+            "flag": "NEURAL_AUDIO_HEURISTIC_DISAGREEMENT",
+            "severity": "MEDIUM",
+            "observed_value": {
+              "aasist_label": "SPOOF",
+              "heuristic_mean": 0.14471383032090945
+            },
+            "reason": "AASIST reads SPOOF but the production audio heuristic reads natural (mean {:.2f}). The two audio detectors disagree; this pattern is consistent with either genuine synthetic audio or codec/telephony artefacts \u2014 further investigation needed.",
+            "evidence_source": "cross_detector"
+          },
+          {
+            "flag": "NEURAL_MODALITY_DISAGREEMENT",
+            "severity": "MEDIUM",
+            "observed_value": {
+              "genconvit": "REAL",
+              "aasist": "SPOOF"
+            },
+            "reason": "GenConViT reads REAL while AASIST reads SPOOF; the two neural detectors disagree on the direction of manipulation evidence.",
+            "evidence_source": "cross_detector"
+          }
+        ]
+      },
+      "modalities": {
+        "genconvit": {
+          "available": true,
+          "evidence_direction": {
+            "modality": "genconvit",
+            "evidence_direction": "REAL_EVIDENCE",
+            "evidence_strength": "LOW",
+            "reliability_state": "MODERATE",
+            "score": 0.6252497434616089
+          },
+          "score": 0.6252497434616089,
+          "coverage": {
+            "status": "PARTIAL",
+            "face_coverage": 0.4,
+            "frames_used": 4,
+            "frames_requested": 10,
+            "reliability_note": "GenConViT had partial visual coverage; its output should be interpreted with some caution."
+          },
+          "reliability": "MODERATE"
+        },
+        "aasist": {
+          "available": true,
+          "evidence_direction": {
+            "modality": "aasist",
+            "evidence_direction": "FAKE_EVIDENCE",
+            "evidence_strength": "HIGH",
+            "reliability_state": "MODERATE",
+            "score": 0.983834
+          },
+          "score": 0.983834,
+          "segment_pattern": {
+            "mean_spoof": 0.983835,
+            "min_spoof": 0.965917,
+            "max_spoof": 0.994646,
+            "window_count": 3,
+            "segment_pattern": "persistent_high_spoof",
+            "high_spoof_window_count": 3,
+            "low_spoof_window_count": 0,
+            "high_spoof_fraction": 1.0,
+            "timestamps": [
+              0.0,
+              4.037,
+              8.075
+            ],
+            "detail": "AASIST produced SPOOF-oriented audio evidence across 3 analyzed windows (mean spoof score: 0.9838, range: 0.9659\u20130.9946). Segment pattern: persistent_high_spoof. 3/3 windows scored >= 0.8 (high spoof), 0/3 scored < 0.2 (low spoof). This is audio-level evidence; persistent spoof detection does NOT by itself establish video-level manipulation."
+          },
+          "reliability": "MODERATE"
+        }
+      },
+      "agreement": {
+        "comparisons": {
+          "genconvit_vs_aasist": "DISAGREE",
+          "aasist_vs_audio_heuristic": "DISAGREE",
+          "genconvit_vs_texture": "DISAGREE",
+          "provenance_vs_genconvit": "DISAGREE"
+        },
+        "neural_agreement": "NEURAL_DISAGREEMENT",
+        "neural_vs_heuristic_disagreement": true,
+        "agree_count": 0,
+        "disagree_count": 4,
+        "summary": "MULTIMODAL_DISAGREEMENT"
+      },
+      "evidence_summary": [
+        "GenConViT: REAL (score=0.6252497434616089, coverage=PARTIAL)",
+        "AASIST: SPOOF (spoof=0.983834, pattern=persistent_high_spoof, n=3)",
+        "Domain-risk flags: NEURAL_AUDIO_HEURISTIC_DISAGREEMENT, NEURAL_MODALITY_DISAGREEMENT"
+      ],
+      "explanations": [
+        "AASIST produced persistent spoof-oriented audio evidence across all 3 analyzed windows (mean 0.9838). This is audio-level evidence only; it does NOT by itself establish video-level manipulation.",
+        "GenConViT had partial visual coverage; its output carries moderate weight.",
+        "AASIST and the existing audio heuristic disagree on the authenticity of the audio track.",
+        "The two neural detectors (GenConViT and AASIST) read the manipulation evidence in different directions.",
+        "AASIST and the audio heuristic disagree; this pattern is consistent with either synthetic audio or codec artefacts.",
+        "The two neural detectors disagree on the manipulation evidence direction."
+      ],
+      "overall_reliability": "MODERATE"
+    },
+    {
+      "filename": "girl_speaking video gemini.mp4",
+      "ground_truth": "FAKE",
+      "production_verdict": "FAKE",
+      "production_fusion_score": 0.5936245383719256,
+      "domain_risk": {
+        "state": "HIGH",
+        "flags": []
+      },
+      "modalities": {
+        "genconvit": {
+          "available": true,
+          "evidence_direction": {
+            "modality": "genconvit",
+            "evidence_direction": "REAL_EVIDENCE",
+            "evidence_strength": "MODERATE",
+            "reliability_state": "MODERATE",
+            "score": 0.7349954843521118
+          },
+          "score": 0.7349954843521118,
+          "coverage": {
+            "status": "PARTIAL",
+            "face_coverage": 0.4,
+            "frames_used": 4,
+            "frames_requested": 10,
+            "reliability_note": "GenConViT had partial visual coverage; its output should be interpreted with some caution."
+          },
+          "reliability": "MODERATE"
+        },
+        "aasist": {
+          "available": true,
+          "evidence_direction": {
+            "modality": "aasist",
+            "evidence_direction": "REAL_EVIDENCE",
+            "evidence_strength": "HIGH",
+            "reliability_state": "MODERATE",
+            "score": 0.016829
+          },
+          "score": 0.016829,
+          "segment_pattern": {
+            "mean_spoof": 0.016829,
+            "min_spoof": 0.000366,
+            "max_spoof": 0.046468,
+            "window_count": 3,
+            "segment_pattern": "persistent_low_spoof",
+            "high_spoof_window_count": 0,
+            "low_spoof_window_count": 3,
+            "high_spoof_fraction": 0.0,
+            "timestamps": [
+              0.0,
+              4.037,
+              8.075
+            ],
+            "detail": "AASIST produced BONAFIDE-oriented audio evidence across 3 analyzed windows (mean spoof score: 0.0168, range: 0.0004\u20130.0465). Segment pattern: persistent_low_spoof. 0/3 windows scored >= 0.8 (high spoof), 3/3 scored < 0.2 (low spoof)."
+          },
+          "reliability": "MODERATE"
+        }
+      },
+      "agreement": {
+        "comparisons": {
+          "genconvit_vs_aasist": "AGREE",
+          "aasist_vs_audio_heuristic": "AGREE",
+          "genconvit_vs_texture": "DISAGREE",
+          "provenance_vs_genconvit": "DISAGREE"
+        },
+        "neural_agreement": "NEURAL_AGREEMENT",
+        "neural_vs_heuristic_disagreement": false,
+        "agree_count": 2,
+        "disagree_count": 2,
+        "summary": "MIXED_AGREEMENT"
+      },
+      "evidence_summary": [
+        "GenConViT: REAL (score=0.7349954843521118, coverage=PARTIAL)",
+        "AASIST: BONAFIDE (spoof=0.016829, pattern=persistent_low_spoof, n=3)"
+      ],
+      "explanations": [
+        "AASIST read the audio as authentic (bonafide; mean spoof score: 0.0168). This is an audio-level statement only; it does NOT imply the video is real.",
+        "GenConViT had partial visual coverage; its output carries moderate weight."
+      ],
+      "overall_reliability": "MODERATE"
+    },
+    {
+      "filename": "insta vid.mp4",
+      "ground_truth": "FAKE",
+      "production_verdict": "REAL",
+      "production_fusion_score": 0.3608278066706602,
+      "domain_risk": {
+        "state": "MODERATE",
+        "flags": [
+          {
+            "flag": "NEURAL_AUDIO_HEURISTIC_DISAGREEMENT",
+            "severity": "MEDIUM",
+            "observed_value": {
+              "aasist_label": "SPOOF",
+              "heuristic_mean": 0.09244454421399645
+            },
+            "reason": "AASIST reads SPOOF but the production audio heuristic reads natural (mean {:.2f}). The two audio detectors disagree; this pattern is consistent with either genuine synthetic audio or codec/telephony artefacts \u2014 further investigation needed.",
+            "evidence_source": "cross_detector"
+          }
+        ]
+      },
+      "modalities": {
+        "genconvit": {
+          "available": true,
+          "evidence_direction": {
+            "modality": "genconvit",
+            "evidence_direction": "FAKE_EVIDENCE",
+            "evidence_strength": "LOW",
+            "reliability_state": "MODERATE",
+            "score": 0.4907633662223816
+          },
+          "score": 0.4907633662223816,
+          "coverage": {
+            "status": "PARTIAL",
+            "face_coverage": 0.2682926829268293,
+            "frames_used": 11,
+            "frames_requested": 41,
+            "reliability_note": "GenConViT had partial visual coverage; its output should be interpreted with some caution."
+          },
+          "reliability": "MODERATE"
+        },
+        "aasist": {
+          "available": true,
+          "evidence_direction": {
+            "modality": "aasist",
+            "evidence_direction": "FAKE_EVIDENCE",
+            "evidence_strength": "HIGH",
+            "reliability_state": "MODERATE",
+            "score": 0.998526
+          },
+          "score": 0.998526,
+          "segment_pattern": {
+            "mean_spoof": 0.998525,
+            "min_spoof": 0.995777,
+            "max_spoof": 0.999788,
+            "window_count": 11,
+            "segment_pattern": "persistent_high_spoof",
+            "high_spoof_window_count": 11,
+            "low_spoof_window_count": 0,
+            "high_spoof_fraction": 1.0,
+            "timestamps": [
+              0.0,
+              4.037,
+              8.075,
+              12.112,
+              16.15,
+              20.188,
+              24.225,
+              28.262,
+              32.3,
+              36.337,
+              40.375
+            ],
+            "detail": "AASIST produced SPOOF-oriented audio evidence across 11 analyzed windows (mean spoof score: 0.9985, range: 0.9958\u20130.9998). Segment pattern: persistent_high_spoof. 11/11 windows scored >= 0.8 (high spoof), 0/11 scored < 0.2 (low spoof). This is audio-level evidence; persistent spoof detection does NOT by itself establish video-level manipulation."
+          },
+          "reliability": "MODERATE"
+        }
+      },
+      "agreement": {
+        "comparisons": {
+          "genconvit_vs_aasist": "AGREE",
+          "aasist_vs_audio_heuristic": "DISAGREE"
+        },
+        "neural_agreement": "NEURAL_AGREEMENT",
+        "neural_vs_heuristic_disagreement": true,
+        "agree_count": 1,
+        "disagree_count": 1,
+        "summary": "MIXED_AGREEMENT"
+      },
+      "evidence_summary": [
+        "GenConViT: FAKE (score=0.4907633662223816, coverage=PARTIAL)",
+        "AASIST: SPOOF (spoof=0.998526, pattern=persistent_high_spoof, n=11)",
+        "Domain-risk flags: NEURAL_AUDIO_HEURISTIC_DISAGREEMENT"
+      ],
+      "explanations": [
+        "AASIST produced persistent spoof-oriented audio evidence across all 11 analyzed windows (mean 0.9985). This is audio-level evidence only; it does NOT by itself establish video-level manipulation.",
+        "GenConViT had partial visual coverage; its output carries moderate weight.",
+        "AASIST and the existing audio heuristic disagree on the authenticity of the audio track.",
+        "AASIST and the audio heuristic disagree; this pattern is consistent with either synthetic audio or codec artefacts."
+      ],
+      "overall_reliability": "MODERATE"
+    },
+    {
+      "filename": "real vid ai aud.mp4",
+      "ground_truth": "FAKE",
+      "production_verdict": "REAL",
+      "production_fusion_score": 0.33351302244843506,
+      "domain_risk": {
+        "state": "MODERATE",
+        "flags": [
+          {
+            "flag": "LOW_FACE_COVERAGE",
+            "severity": "MEDIUM",
+            "observed_value": 0.19607843137254902,
+            "reason": "Face coverage is 19.6% of sampled frames; GenConViT's visual reading is based on limited data.",
+            "evidence_source": "face_detector"
+          },
+          {
+            "flag": "NEURAL_AUDIO_HEURISTIC_DISAGREEMENT",
+            "severity": "MEDIUM",
+            "observed_value": {
+              "aasist_label": "SPOOF",
+              "heuristic_mean": 0.07478258365843364
+            },
+            "reason": "AASIST reads SPOOF but the production audio heuristic reads natural (mean {:.2f}). The two audio detectors disagree; this pattern is consistent with either genuine synthetic audio or codec/telephony artefacts \u2014 further investigation needed.",
+            "evidence_source": "cross_detector"
+          }
+        ]
+      },
+      "modalities": {
+        "genconvit": {
+          "available": true,
+          "evidence_direction": {
+            "modality": "genconvit",
+            "evidence_direction": "FAKE_EVIDENCE",
+            "evidence_strength": "LOW",
+            "reliability_state": "LOW",
+            "score": 0.49474847316741943
+          },
+          "score": 0.49474847316741943,
+          "coverage": {
+            "status": "LOW",
+            "face_coverage": 0.19607843137254902,
+            "frames_used": 20,
+            "frames_requested": 102,
+            "reliability_note": "GenConViT had limited visual coverage; its output should be interpreted cautiously."
+          },
+          "reliability": "LOW"
+        },
+        "aasist": {
+          "available": true,
+          "evidence_direction": {
+            "modality": "aasist",
+            "evidence_direction": "FAKE_EVIDENCE",
+            "evidence_strength": "HIGH",
+            "reliability_state": "MODERATE",
+            "score": 0.995942
+          },
+          "score": 0.995942,
+          "segment_pattern": {
+            "mean_spoof": 0.995942,
+            "min_spoof": 0.990974,
+            "max_spoof": 0.999325,
+            "window_count": 26,
+            "segment_pattern": "persistent_high_spoof",
+            "high_spoof_window_count": 26,
+            "low_spoof_window_count": 0,
+            "high_spoof_fraction": 1.0,
+            "timestamps": [
+              0.0,
+              4.037,
+              8.075,
+              12.112,
+              16.15,
+              20.188,
+              24.225,
+              28.262,
+              32.3,
+              36.337,
+              40.375,
+              44.412,
+              48.45,
+              52.487,
+              56.525,
+              60.562,
+              64.6,
+              68.637,
+              72.675,
+              76.712,
+              80.75,
+              84.787,
+              88.825,
+              92.862,
+              96.9,
+              100.937
+            ],
+            "detail": "AASIST produced SPOOF-oriented audio evidence across 26 analyzed windows (mean spoof score: 0.9959, range: 0.9910\u20130.9993). Segment pattern: persistent_high_spoof. 26/26 windows scored >= 0.8 (high spoof), 0/26 scored < 0.2 (low spoof). This is audio-level evidence; persistent spoof detection does NOT by itself establish video-level manipulation."
+          },
+          "reliability": "MODERATE"
+        }
+      },
+      "agreement": {
+        "comparisons": {
+          "genconvit_vs_aasist": "AGREE",
+          "aasist_vs_audio_heuristic": "DISAGREE",
+          "genconvit_vs_texture": "DISAGREE"
+        },
+        "neural_agreement": "NEURAL_AGREEMENT",
+        "neural_vs_heuristic_disagreement": true,
+        "agree_count": 1,
+        "disagree_count": 2,
+        "summary": "MIXED_AGREEMENT"
+      },
+      "evidence_summary": [
+        "GenConViT: FAKE (score=0.49474847316741943, coverage=LOW)",
+        "AASIST: SPOOF (spoof=0.995942, pattern=persistent_high_spoof, n=26)",
+        "Domain-risk flags: LOW_FACE_COVERAGE, NEURAL_AUDIO_HEURISTIC_DISAGREEMENT"
+      ],
+      "explanations": [
+        "AASIST produced persistent spoof-oriented audio evidence across all 26 analyzed windows (mean 0.9959). This is audio-level evidence only; it does NOT by itself establish video-level manipulation.",
+        "GenConViT had limited visual coverage (LOW); its output should be interpreted cautiously.",
+        "AASIST and the existing audio heuristic disagree on the authenticity of the audio track.",
+        "AASIST and the audio heuristic disagree; this pattern is consistent with either synthetic audio or codec artefacts."
+      ],
+      "overall_reliability": "MODERATE"
+    },
+    {
+      "filename": "south indian women speaking.mp4",
+      "ground_truth": "FAKE",
+      "production_verdict": "FAKE",
+      "production_fusion_score": 0.6691352605531935,
+      "domain_risk": {
+        "state": "MODERATE",
+        "flags": [
+          {
+            "flag": "NEURAL_MODALITY_DISAGREEMENT",
+            "severity": "MEDIUM",
+            "observed_value": {
+              "genconvit": "FAKE",
+              "aasist": "BONAFIDE"
+            },
+            "reason": "GenConViT reads FAKE while AASIST reads BONAFIDE; the two neural detectors disagree on the direction of manipulation evidence.",
+            "evidence_source": "cross_detector"
+          }
+        ]
+      },
+      "modalities": {
+        "genconvit": {
+          "available": true,
+          "evidence_direction": {
+            "modality": "genconvit",
+            "evidence_direction": "FAKE_EVIDENCE",
+            "evidence_strength": "LOW",
+            "reliability_state": "LOW",
+            "score": 0.4982631206512451
+          },
+          "score": 0.4982631206512451,
+          "coverage": {
+            "status": "LOW",
+            "face_coverage": 0.2,
+            "frames_used": 2,
+            "frames_requested": 10,
+            "reliability_note": "GenConViT had limited visual coverage; its output should be interpreted cautiously."
+          },
+          "reliability": "LOW"
+        },
+        "aasist": {
+          "available": true,
+          "evidence_direction": {
+            "modality": "aasist",
+            "evidence_direction": "REAL_EVIDENCE",
+            "evidence_strength": "HIGH",
+            "reliability_state": "MODERATE",
+            "score": 0.009482
+          },
+          "score": 0.009482,
+          "segment_pattern": {
+            "mean_spoof": 0.009481,
+            "min_spoof": 0.006307,
+            "max_spoof": 0.011523,
+            "window_count": 3,
+            "segment_pattern": "persistent_low_spoof",
+            "high_spoof_window_count": 0,
+            "low_spoof_window_count": 3,
+            "high_spoof_fraction": 0.0,
+            "timestamps": [
+              0.0,
+              4.037,
+              8.075
+            ],
+            "detail": "AASIST produced BONAFIDE-oriented audio evidence across 3 analyzed windows (mean spoof score: 0.0095, range: 0.0063\u20130.0115). Segment pattern: persistent_low_spoof. 0/3 windows scored >= 0.8 (high spoof), 3/3 scored < 0.2 (low spoof)."
+          },
+          "reliability": "MODERATE"
+        }
+      },
+      "agreement": {
+        "comparisons": {
+          "genconvit_vs_aasist": "DISAGREE",
+          "aasist_vs_audio_heuristic": "AGREE",
+          "genconvit_vs_texture": "AGREE",
+          "provenance_vs_genconvit": "AGREE"
+        },
+        "neural_agreement": "NEURAL_DISAGREEMENT",
+        "neural_vs_heuristic_disagreement": false,
+        "agree_count": 3,
+        "disagree_count": 1,
+        "summary": "MIXED_AGREEMENT"
+      },
+      "evidence_summary": [
+        "GenConViT: FAKE (score=0.4982631206512451, coverage=LOW)",
+        "AASIST: BONAFIDE (spoof=0.009482, pattern=persistent_low_spoof, n=3)",
+        "Domain-risk flags: NEURAL_MODALITY_DISAGREEMENT"
+      ],
+      "explanations": [
+        "AASIST read the audio as authentic (bonafide; mean spoof score: 0.0095). This is an audio-level statement only; it does NOT imply the video is real.",
+        "GenConViT had limited visual coverage (LOW); its output should be interpreted cautiously.",
+        "The two neural detectors (GenConViT and AASIST) read the manipulation evidence in different directions.",
+        "The two neural detectors disagree on the manipulation evidence direction."
+      ],
+      "overall_reliability": "MODERATE"
+    },
+    {
+      "filename": "WhatsApp Video 2026-07-24 at 6.15.45 PM.mp4",
+      "ground_truth": "REAL",
+      "production_verdict": "REAL",
+      "production_fusion_score": 0.3288806394246594,
+      "domain_risk": {
+        "state": "DOMAIN-RISK",
+        "flags": [
+          {
+            "flag": "LOW_BITRATE",
+            "severity": "HIGH",
+            "observed_value": 974.4,
+            "reason": "Input bitrate (974 kbps) is within the previously observed low-bitrate risk regime (threshold: 1200 kbps).",
+            "evidence_source": "ffprobe"
+          },
+          {
+            "flag": "WHATSAPP_OR_CHAT_RELINK",
+            "severity": "HIGH",
+            "observed_value": "WhatsApp Video 2026-07-24 at 6.15.45 PM.mp4",
+            "reason": "Filename suggests WhatsApp/chat relink. Such media undergoes platform transcoding (AAC re-encode, resolution/bitrate reduction) that may create artefacts correlated with false detector responses.",
+            "evidence_source": "filename_pattern"
+          },
+          {
+            "flag": "LOW_FACE_COVERAGE",
+            "severity": "MEDIUM",
+            "observed_value": 0.034482758620689655,
+            "reason": "Face coverage is 3.4% of sampled frames; GenConViT's visual reading is based on limited data.",
+            "evidence_source": "face_detector"
+          },
+          {
+            "flag": "NEURAL_AUDIO_HEURISTIC_DISAGREEMENT",
+            "severity": "MEDIUM",
+            "observed_value": {
+              "aasist_label": "SPOOF",
+              "heuristic_mean": 0.07670162609899442
+            },
+            "reason": "AASIST reads SPOOF but the production audio heuristic reads natural (mean {:.2f}). The two audio detectors disagree; this pattern is consistent with either genuine synthetic audio or codec/telephony artefacts \u2014 further investigation needed.",
+            "evidence_source": "cross_detector"
+          }
+        ]
+      },
+      "modalities": {
+        "genconvit": {
+          "available": true,
+          "evidence_direction": {
+            "modality": "genconvit",
+            "evidence_direction": "FAKE_EVIDENCE",
+            "evidence_strength": "LOW",
+            "reliability_state": "DOMAIN-RISK",
+            "score": 0.4679330587387085
+          },
+          "score": 0.4679330587387085,
+          "coverage": {
+            "status": "LOW",
+            "face_coverage": 0.034482758620689655,
+            "frames_used": 2,
+            "frames_requested": 58,
+            "reliability_note": "GenConViT had limited visual coverage; its output should be interpreted cautiously."
+          },
+          "reliability": "DOMAIN-RISK"
+        },
+        "aasist": {
+          "available": true,
+          "evidence_direction": {
+            "modality": "aasist",
+            "evidence_direction": "FAKE_EVIDENCE",
+            "evidence_strength": "HIGH",
+            "reliability_state": "DOMAIN-RISK",
+            "score": 0.964602
+          },
+          "score": 0.964602,
+          "segment_pattern": {
+            "mean_spoof": 0.964602,
+            "min_spoof": 0.93274,
+            "max_spoof": 0.994577,
+            "window_count": 15,
+            "segment_pattern": "persistent_high_spoof",
+            "high_spoof_window_count": 15,
+            "low_spoof_window_count": 0,
+            "high_spoof_fraction": 1.0,
+            "timestamps": [
+              0.0,
+              4.037,
+              8.075,
+              12.112,
+              16.15,
+              20.188,
+              24.225,
+              28.262,
+              32.3,
+              36.337,
+              40.375,
+              44.412,
+              48.45,
+              52.487,
+              56.525
+            ],
+            "detail": "AASIST produced SPOOF-oriented audio evidence across 15 analyzed windows (mean spoof score: 0.9646, range: 0.9327\u20130.9946). Segment pattern: persistent_high_spoof. 15/15 windows scored >= 0.8 (high spoof), 0/15 scored < 0.2 (low spoof). This is audio-level evidence; persistent spoof detection does NOT by itself establish video-level manipulation."
+          },
+          "reliability": "DOMAIN-RISK"
+        }
+      },
+      "agreement": {
+        "comparisons": {
+          "genconvit_vs_aasist": "AGREE",
+          "aasist_vs_audio_heuristic": "DISAGREE"
+        },
+        "neural_agreement": "NEURAL_AGREEMENT",
+        "neural_vs_heuristic_disagreement": true,
+        "agree_count": 1,
+        "disagree_count": 1,
+        "summary": "MIXED_AGREEMENT"
+      },
+      "evidence_summary": [
+        "GenConViT: FAKE (score=0.4679330587387085, coverage=LOW)",
+        "AASIST: SPOOF (spoof=0.964602, pattern=persistent_high_spoof, n=15)",
+        "Domain-risk flags: LOW_BITRATE, WHATSAPP_OR_CHAT_RELINK, LOW_FACE_COVERAGE, NEURAL_AUDIO_HEURISTIC_DISAGREEMENT"
+      ],
+      "explanations": [
+        "AASIST produced persistent spoof-oriented audio evidence across all 15 analyzed windows (mean 0.9646). This is audio-level evidence only; it does NOT by itself establish video-level manipulation.",
+        "GenConViT had limited visual coverage (LOW); its output should be interpreted cautiously.",
+        "AASIST and the existing audio heuristic disagree on the authenticity of the audio track.",
+        "Input exhibits a domain-risk indicator associated with low-bitrate media; detector readings may be less reliable under these conditions.",
+        "Filename suggests WhatsApp/chat relink; platform transcoding may have introduced artefacts that affect detector reliability.",
+        "AASIST and the audio heuristic disagree; this pattern is consistent with either synthetic audio or codec artefacts.",
+        "The overall evidence reliability is limited by domain-risk factors; detector readings should be treated with caution."
+      ],
+      "overall_reliability": "DOMAIN-RISK"
+    },
+    {
+      "filename": "WhatsApp Video 2026-07-24 at 6.15.46 PM.mp4",
+      "ground_truth": "REAL",
+      "production_verdict": "REAL",
+      "production_fusion_score": 0.3120384495889196,
+      "domain_risk": {
+        "state": "DOMAIN-RISK",
+        "flags": [
+          {
+            "flag": "WHATSAPP_OR_CHAT_RELINK",
+            "severity": "HIGH",
+            "observed_value": "WhatsApp Video 2026-07-24 at 6.15.46 PM.mp4",
+            "reason": "Filename suggests WhatsApp/chat relink. Such media undergoes platform transcoding (AAC re-encode, resolution/bitrate reduction) that may create artefacts correlated with false detector responses.",
+            "evidence_source": "filename_pattern"
+          },
+          {
+            "flag": "NEURAL_AUDIO_HEURISTIC_DISAGREEMENT",
+            "severity": "MEDIUM",
+            "observed_value": {
+              "aasist_label": "SPOOF",
+              "heuristic_mean": 0.23600724081075405
+            },
+            "reason": "AASIST reads SPOOF but the production audio heuristic reads natural (mean {:.2f}). The two audio detectors disagree; this pattern is consistent with either genuine synthetic audio or codec/telephony artefacts \u2014 further investigation needed.",
+            "evidence_source": "cross_detector"
+          },
+          {
+            "flag": "NEURAL_MODALITY_DISAGREEMENT",
+            "severity": "MEDIUM",
+            "observed_value": {
+              "genconvit": "REAL",
+              "aasist": "SPOOF"
+            },
+            "reason": "GenConViT reads REAL while AASIST reads SPOOF; the two neural detectors disagree on the direction of manipulation evidence.",
+            "evidence_source": "cross_detector"
+          }
+        ]
+      },
+      "modalities": {
+        "genconvit": {
+          "available": true,
+          "evidence_direction": {
+            "modality": "genconvit",
+            "evidence_direction": "REAL_EVIDENCE",
+            "evidence_strength": "LOW",
+            "reliability_state": "DOMAIN-RISK",
+            "score": 0.5469104945659637
+          },
+          "score": 0.5469104945659637,
+          "coverage": {
+            "status": "GOOD",
+            "face_coverage": 0.9230769230769231,
+            "frames_used": 12,
+            "frames_requested": 13,
+            "reliability_note": "GenConViT had adequate visual coverage; its output can be interpreted with moderate confidence."
+          },
+          "reliability": "DOMAIN-RISK"
+        },
+        "aasist": {
+          "available": true,
+          "evidence_direction": {
+            "modality": "aasist",
+            "evidence_direction": "FAKE_EVIDENCE",
+            "evidence_strength": "HIGH",
+            "reliability_state": "DOMAIN-RISK",
+            "score": 0.993735
+          },
+          "score": 0.993735,
+          "segment_pattern": {
+            "mean_spoof": 0.993734,
+            "min_spoof": 0.989077,
+            "max_spoof": 0.99866,
+            "window_count": 4,
+            "segment_pattern": "persistent_high_spoof",
+            "high_spoof_window_count": 4,
+            "low_spoof_window_count": 0,
+            "high_spoof_fraction": 1.0,
+            "timestamps": [
+              0.0,
+              4.037,
+              8.075,
+              12.112
+            ],
+            "detail": "AASIST produced SPOOF-oriented audio evidence across 4 analyzed windows (mean spoof score: 0.9937, range: 0.9891\u20130.9987). Segment pattern: persistent_high_spoof. 4/4 windows scored >= 0.8 (high spoof), 0/4 scored < 0.2 (low spoof). This is audio-level evidence; persistent spoof detection does NOT by itself establish video-level manipulation."
+          },
+          "reliability": "DOMAIN-RISK"
+        }
+      },
+      "agreement": {
+        "comparisons": {
+          "genconvit_vs_aasist": "DISAGREE",
+          "aasist_vs_audio_heuristic": "DISAGREE",
+          "genconvit_vs_texture": "AGREE"
+        },
+        "neural_agreement": "NEURAL_DISAGREEMENT",
+        "neural_vs_heuristic_disagreement": true,
+        "agree_count": 1,
+        "disagree_count": 2,
+        "summary": "MIXED_AGREEMENT"
+      },
+      "evidence_summary": [
+        "GenConViT: REAL (score=0.5469104945659637, coverage=GOOD)",
+        "AASIST: SPOOF (spoof=0.993735, pattern=persistent_high_spoof, n=4)",
+        "Domain-risk flags: WHATSAPP_OR_CHAT_RELINK, NEURAL_AUDIO_HEURISTIC_DISAGREEMENT, NEURAL_MODALITY_DISAGREEMENT"
+      ],
+      "explanations": [
+        "AASIST produced persistent spoof-oriented audio evidence across all 4 analyzed windows (mean 0.9937). This is audio-level evidence only; it does NOT by itself establish video-level manipulation.",
+        "GenConViT produced a REAL reading with adequate visual coverage.",
+        "AASIST and the existing audio heuristic disagree on the authenticity of the audio track.",
+        "The two neural detectors (GenConViT and AASIST) read the manipulation evidence in different directions.",
+        "Filename suggests WhatsApp/chat relink; platform transcoding may have introduced artefacts that affect detector reliability.",
+        "AASIST and the audio heuristic disagree; this pattern is consistent with either synthetic audio or codec artefacts.",
+        "The two neural detectors disagree on the manipulation evidence direction.",
+        "The overall evidence reliability is limited by domain-risk factors; detector readings should be treated with caution."
+      ],
+      "overall_reliability": "DOMAIN-RISK"
+    },
+    {
+      "filename": "real_vid_to_test_withaudio.mp4",
+      "ground_truth": "REAL",
+      "production_verdict": "UNCERTAIN",
+      "production_fusion_score": 0.4507240846723394,
+      "domain_risk": {
+        "state": "DOMAIN-RISK",
+        "flags": [
+          {
+            "flag": "LOW_RESOLUTION",
+            "severity": "MEDIUM",
+            "observed_value": "480x864",
+            "reason": "Resolution (480x864) is below 720p; downscaled/screen-recorded media may lose detection-relevant texture information.",
+            "evidence_source": "ffprobe"
+          },
+          {
+            "flag": "MISSING_FACE",
+            "severity": "HIGH",
+            "observed_value": false,
+            "reason": "No usable face frames detected; face-dependent neural detectors (GenConViT) cannot produce a visual authenticity reading.",
+            "evidence_source": "face_detector"
+          }
+        ]
+      },
+      "modalities": {
+        "genconvit": {
+          "available": false,
+          "evidence_direction": {
+            "modality": "genconvit",
+            "evidence_direction": "NO_EVIDENCE",
+            "evidence_strength": "N/A",
+            "reliability_state": "UNAVAILABLE",
+            "detail": "genconvit did not produce evidence (unavailable or no output)."
+          },
+          "score": null,
+          "coverage": {
+            "status": "NO_FACE",
+            "face_coverage": 0.0,
+            "frames_used": 0,
+            "frames_requested": 21,
+            "reliability_note": "GenConViT could not detect any usable face frames; its visual deepfake detector produced no evidence."
+          },
+          "reliability": "UNAVAILABLE"
+        },
+        "aasist": {
+          "available": true,
+          "evidence_direction": {
+            "modality": "aasist",
+            "evidence_direction": "REAL_EVIDENCE",
+            "evidence_strength": "HIGH",
+            "reliability_state": "DOMAIN-RISK",
+            "score": 0.012255
+          },
+          "score": 0.012255,
+          "segment_pattern": {
+            "mean_spoof": 0.012254,
+            "min_spoof": 0.008135,
+            "max_spoof": 0.018817,
+            "window_count": 6,
+            "segment_pattern": "persistent_low_spoof",
+            "high_spoof_window_count": 0,
+            "low_spoof_window_count": 6,
+            "high_spoof_fraction": 0.0,
+            "timestamps": [
+              0.0,
+              4.037,
+              8.075,
+              12.112,
+              16.15,
+              20.188
+            ],
+            "detail": "AASIST produced BONAFIDE-oriented audio evidence across 6 analyzed windows (mean spoof score: 0.0123, range: 0.0081\u20130.0188). Segment pattern: persistent_low_spoof. 0/6 windows scored >= 0.8 (high spoof), 6/6 scored < 0.2 (low spoof)."
+          },
+          "reliability": "DOMAIN-RISK"
+        }
+      },
+      "agreement": {
+        "comparisons": {
+          "aasist_vs_audio_heuristic": "AGREE"
+        },
+        "neural_agreement": "INSUFFICIENT_MODALITIES",
+        "neural_vs_heuristic_disagreement": false,
+        "agree_count": 1,
+        "disagree_count": 0,
+        "summary": "PARTIAL_AGREEMENT"
+      },
+      "evidence_summary": [
+        "AASIST: BONAFIDE (spoof=0.012255, pattern=persistent_low_spoof, n=6)",
+        "Face: unavailable (no detectable faces)",
+        "Domain-risk flags: LOW_RESOLUTION, MISSING_FACE"
+      ],
+      "explanations": [
+        "AASIST read the audio as authentic (bonafide; mean spoof score: 0.0123). This is an audio-level statement only; it does NOT imply the video is real.",
+        "No usable face frames were detected; face-dependent neural detectors could not produce visual authenticity evidence.",
+        "No face was detected in any sampled frame.",
+        "The overall evidence reliability is limited by domain-risk factors; detector readings should be treated with caution."
+      ],
+      "overall_reliability": "DOMAIN-RISK"
+    },
+    {
+      "filename": "vid_with_noaudio.mp4",
+      "ground_truth": "REAL",
+      "production_verdict": "UNCERTAIN",
+      "production_fusion_score": 0.5509999816417694,
+      "domain_risk": {
+        "state": "DOMAIN-RISK",
+        "flags": [
+          {
+            "flag": "LOW_RESOLUTION",
+            "severity": "MEDIUM",
+            "observed_value": "480x864",
+            "reason": "Resolution (480x864) is below 720p; downscaled/screen-recorded media may lose detection-relevant texture information.",
+            "evidence_source": "ffprobe"
+          },
+          {
+            "flag": "MISSING_AUDIO",
+            "severity": "HIGH",
+            "observed_value": false,
+            "reason": "No audio stream in container; audio authenticity could not be assessed by any detector.",
+            "evidence_source": "container_metadata"
+          },
+          {
+            "flag": "MISSING_FACE",
+            "severity": "HIGH",
+            "observed_value": false,
+            "reason": "No usable face frames detected; face-dependent neural detectors (GenConViT) cannot produce a visual authenticity reading.",
+            "evidence_source": "face_detector"
+          }
+        ]
+      },
+      "modalities": {
+        "genconvit": {
+          "available": false,
+          "evidence_direction": {
+            "modality": "genconvit",
+            "evidence_direction": "NO_EVIDENCE",
+            "evidence_strength": "N/A",
+            "reliability_state": "UNAVAILABLE",
+            "detail": "genconvit did not produce evidence (unavailable or no output)."
+          },
+          "score": null,
+          "coverage": {
+            "status": "NO_FACE",
+            "face_coverage": 0.0,
+            "frames_used": 0,
+            "frames_requested": 9,
+            "reliability_note": "GenConViT could not detect any usable face frames; its visual deepfake detector produced no evidence."
+          },
+          "reliability": "UNAVAILABLE"
+        },
+        "aasist": {
+          "available": false,
+          "evidence_direction": {
+            "modality": "aasist",
+            "evidence_direction": "NO_EVIDENCE",
+            "evidence_strength": "N/A",
+            "reliability_state": "UNAVAILABLE",
+            "detail": "aasist did not produce evidence (unavailable or no output)."
+          },
+          "score": null,
+          "segment_pattern": {
+            "mean_spoof": null,
+            "min_spoof": null,
+            "max_spoof": null,
+            "window_count": 0,
+            "segment_pattern": "no_windows",
+            "high_spoof_window_count": 0,
+            "low_spoof_window_count": 0,
+            "high_spoof_fraction": null,
+            "timestamps": [],
+            "detail": "No AASIST window scores available."
+          },
+          "reliability": "UNAVAILABLE"
+        }
+      },
+      "agreement": {
+        "comparisons": {},
+        "neural_agreement": "INSUFFICIENT_MODALITIES",
+        "neural_vs_heuristic_disagreement": false,
+        "agree_count": 0,
+        "disagree_count": 0,
+        "summary": "INSUFFICIENT_DATA"
+      },
+      "evidence_summary": [
+        "Audio: unavailable (no audio track)",
+        "Face: unavailable (no detectable faces)",
+        "Domain-risk flags: LOW_RESOLUTION, MISSING_AUDIO, MISSING_FACE"
+      ],
+      "explanations": [
+        "No usable audio was available; audio authenticity could not be assessed.",
+        "No usable face frames were detected; face-dependent neural detectors could not produce visual authenticity evidence.",
+        "No audio stream was available for analysis.",
+        "No face was detected in any sampled frame.",
+        "The overall evidence reliability is limited by domain-risk factors; detector readings should be treated with caution."
+      ],
+      "overall_reliability": "DOMAIN-RISK"
+    }
+  ]
+}
